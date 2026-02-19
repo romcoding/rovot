@@ -11,3 +11,6 @@ venv/
 .ruff_cache/
 .pytest_cache/
 .mypy_cache/
+desktop/node_modules/
+desktop/dist/
+desktop/.cache/

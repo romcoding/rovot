@@ -1,5 +1,4 @@
-"""Allow running with ``python -m rovot``."""
-
 from rovot.cli import app
 
-app()
+if __name__ == "__main__":
+    app()

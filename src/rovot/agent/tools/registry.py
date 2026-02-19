@@ -1,13 +1,9 @@
-"""Tool registry -- register, discover, and invoke tools.
-
-Tools are callables with a JSON-schema description so the LLM can request
-them by name.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, Awaitable
+from typing import Any, Awaitable, Callable
+
+from rovot.policy.engine import AuthContext, PolicyEngine
 
 
 @dataclass
@@ -16,23 +12,20 @@ class Tool:
     description: str
     parameters: dict[str, Any]
     fn: Callable[..., Awaitable[Any]]
+    requires_write: bool = False
+    requires_approval: bool = False
+    approval_summary: str = ""
 
 
 class ToolRegistry:
-    def __init__(self) -> None:
+    def __init__(self, policy: PolicyEngine):
         self._tools: dict[str, Tool] = {}
+        self._policy = policy
 
     def register(self, tool: Tool) -> None:
         self._tools[tool.name] = tool
 
-    def get(self, name: str) -> Tool | None:
-        return self._tools.get(name)
-
-    def list_tools(self) -> list[Tool]:
-        return list(self._tools.values())
-
     def definitions(self) -> list[dict[str, Any]]:
-        """Return OpenAI-compatible tool definitions for the LLM."""
         return [
             {
                 "type": "function",
@@ -45,11 +38,21 @@ class ToolRegistry:
             for t in self._tools.values()
         ]
 
-    async def invoke(self, name: str, arguments: dict[str, Any]) -> Any:
+    async def invoke(
+        self, ctx: AuthContext, session_id: str, name: str, arguments: dict[str, Any]
+    ) -> Any:
         tool = self._tools.get(name)
-        if tool is None:
-            return f"Error: unknown tool '{name}'"
-        try:
-            return await tool.fn(**arguments)
-        except Exception as exc:
-            return f"Error executing {name}: {exc}"
+        if not tool:
+            return {"error": f"Unknown tool: {name}"}
+        if tool.requires_write:
+            self._policy.enforce_write_scope(ctx)
+        if tool.requires_approval:
+            self._policy.maybe_require_approval(
+                ctx=ctx,
+                session_id=session_id,
+                tool_name=tool.name,
+                tool_args=arguments,
+                summary=tool.approval_summary or f"Run tool {tool.name}",
+                require=True,
+            )
+        return await tool.fn(**arguments)

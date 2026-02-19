@@ -1,66 +1,125 @@
-"""Typer CLI entry point.
-
-Subcommands:
-  start   -- launch the loopback control-plane daemon
-  doctor  -- check config, interface binding, and permissions
-  chat    -- interactive CLI chat (sends to the local control plane)
-"""
-
 from __future__ import annotations
 
+import json
+from typing import Any
+
+import httpx
 import typer
 
 from rovot import __version__
+from rovot.config import ConfigStore, Settings
+from rovot.secrets import SecretsStore
+from rovot.server.deps import ensure_auth_token
 
 app = typer.Typer(name="rovot", help="Local-first personal AI agent.", no_args_is_help=True)
+config_app = typer.Typer(name="config", help="Config operations.")
+secret_app = typer.Typer(name="secret", help="Secret operations.")
+app.add_typer(config_app)
+app.add_typer(secret_app)
+
+
+def _settings_and_stores() -> tuple[Settings, ConfigStore, SecretsStore]:
+    s = Settings()
+    s.data_dir.mkdir(parents=True, exist_ok=True)
+    s.workspace_dir.mkdir(parents=True, exist_ok=True)
+    secrets = SecretsStore(service="rovot", fallback_path=s.data_dir / "secrets.json")
+    ensure_auth_token(s, secrets)
+    cfg = ConfigStore(path=s.data_dir / "config.json")
+    cfg.load()
+    cfg.save()
+    return s, cfg, secrets
+
+
+def _auth_token_file(s: Settings) -> str:
+    return (s.data_dir / "auth_token.txt").read_text("utf-8").strip()
+
+
+@app.command()
+def onboard() -> None:
+    """Run first-time setup: create dirs, generate auth token, write default config."""
+    s, cfg, _ = _settings_and_stores()
+    typer.echo(f"Workspace: {s.workspace_dir}")
+    typer.echo(f"Config: {cfg.path}")
+    typer.echo(f"Token file: {s.data_dir / 'auth_token.txt'}")
 
 
 @app.command()
 def start(
-    host: str = typer.Option("127.0.0.1", help="Bind address (loopback recommended)."),
-    port: int = typer.Option(18789, help="Port for the local control plane."),
+    host: str = typer.Option("127.0.0.1"),
+    port: int = typer.Option(18789),
 ) -> None:
     """Launch the loopback control-plane daemon."""
     import uvicorn
 
     from rovot.server.app import create_app
 
-    application = create_app()
-    uvicorn.run(application, host=host, port=port)
+    uvicorn.run(create_app(), host=host, port=port)
 
 
 @app.command()
 def doctor() -> None:
     """Check config, interface binding, and connector permissions."""
-    from rovot.config import load_settings
-
-    settings = load_settings()
+    s, _, _ = _settings_and_stores()
     issues: list[str] = []
-
-    if settings.host != "127.0.0.1":
-        issues.append(
-            f"Control plane binds to {settings.host} -- loopback (127.0.0.1) is recommended."
-        )
-
-    if not settings.workspace_dir.is_dir():
-        issues.append(f"Workspace directory does not exist: {settings.workspace_dir}")
-
+    if s.host != "127.0.0.1":
+        issues.append(f"Control plane binds to {s.host} (recommended: 127.0.0.1)")
+    if not s.workspace_dir.is_dir():
+        issues.append(f"Workspace missing: {s.workspace_dir}")
     if issues:
-        for issue in issues:
-            typer.echo(f"[!] {issue}")
+        for i in issues:
+            typer.echo(f"[!] {i}")
         raise typer.Exit(code=1)
-
     typer.echo("All checks passed.")
 
 
 @app.command()
-def chat() -> None:
-    """Interactive CLI chat (sends messages to the local control plane)."""
-    typer.echo("rovot chat -- not yet implemented")
-    raise typer.Exit(code=0)
+def chat(message: str = typer.Option(..., "-m")) -> None:
+    """Send a message to the running daemon and print the reply."""
+    s, _, _ = _settings_and_stores()
+    tok = _auth_token_file(s)
+    r = httpx.post(
+        f"http://127.0.0.1:{s.port}/chat",
+        json={"message": message},
+        headers={"Authorization": f"Bearer {tok}"},
+        timeout=120.0,
+    )
+    r.raise_for_status()
+    typer.echo(r.json()["reply"])
+
+
+@config_app.command("get")
+def config_get() -> None:
+    """Print the current config as JSON."""
+    _, cfg, _ = _settings_and_stores()
+    typer.echo(cfg.config.model_dump_json(indent=2))
+
+
+@config_app.command("set")
+def config_set(path: str, value: str) -> None:
+    """Set a config value by dotted path (e.g. model.base_url)."""
+    _, cfg, _ = _settings_and_stores()
+    try:
+        v: Any = json.loads(value)
+    except Exception:
+        v = value
+    cfg.update_path(path, v)
+    typer.echo("ok")
+
+
+@secret_app.command("set")
+def secret_set(key: str, value: str) -> None:
+    """Store a secret in OS keychain (or fallback file)."""
+    s = Settings()
+    secrets = SecretsStore(service="rovot", fallback_path=s.data_dir / "secrets.json")
+    secrets.set(key, value)
+    typer.echo("ok")
 
 
 @app.command()
 def version() -> None:
     """Print the current version."""
     typer.echo(f"rovot {__version__}")
+
+
+if __name__ == "__main__":
+    app()

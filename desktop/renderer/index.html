@@ -1,0 +1,31 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Rovot</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div id="topbar">
+      <div>Rovot (local-first)</div>
+      <div id="status">connecting…</div>
+    </div>
+    <div id="layout">
+      <div id="chat">
+        <div id="messages"></div>
+        <div id="composer">
+          <textarea id="input" placeholder="Type a message…"></textarea>
+          <button id="send">Send</button>
+          <button id="record">🎙</button>
+        </div>
+      </div>
+      <div id="side">
+        <h3>Pending approvals</h3>
+        <div id="approvals"></div>
+        <h3>Tool trace</h3>
+        <pre id="trace"></pre>
+      </div>
+    </div>
+    <script src="renderer.js"></script>
+  </body>
+</html>

@@ -1,66 +1,108 @@
-"""Two-phase approval flow for high-risk tool execution.
-
-Mirrors the exec-approval pattern from OpenClaw: a tool call is created as
-a pending request, the UI (or an automated policy) resolves it, and only then
-does execution proceed.
-"""
-
 from __future__ import annotations
 
+import json
+import time
 import uuid
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
-from enum import Enum
+from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Any
 
 
-class ApprovalStatus(str, Enum):
-    PENDING = "pending"
-    APPROVED = "approved"
-    DENIED = "denied"
-    EXPIRED = "expired"
+class ApprovalRequired(Exception):
+    def __init__(self, approval_id: str, message: str):
+        super().__init__(message)
+        self.approval_id = approval_id
 
 
 @dataclass
-class ApprovalRequest:
-    id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
-    tool_name: str = ""
-    arguments: dict[str, Any] = field(default_factory=dict)
-    status: ApprovalStatus = ApprovalStatus.PENDING
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    timeout: timedelta = field(default_factory=lambda: timedelta(minutes=5))
-
-    @property
-    def is_expired(self) -> bool:
-        return datetime.now(timezone.utc) > self.created_at + self.timeout
+class Approval:
+    id: str
+    created_at_ms: int
+    expires_at_ms: int
+    tool_name: str
+    summary: str
+    session_id: str
+    status: str = "pending"  # pending | allow | deny | expired
+    resolved_by: str | None = None
+    resolved_at_ms: int | None = None
+    tool_arguments: dict[str, Any] | None = None
 
 
 class ApprovalManager:
-    """Tracks pending approval requests with idempotency and expiry."""
+    def __init__(self, path: Path):
+        self._path = path
+        self._approvals: dict[str, Approval] = {}
+        self._load()
 
-    def __init__(self) -> None:
-        self._requests: dict[str, ApprovalRequest] = {}
+    def _load(self) -> None:
+        if not self._path.exists():
+            return
+        try:
+            raw = json.loads(self._path.read_text("utf-8"))
+            for rec in raw:
+                a = Approval(**rec)
+                self._approvals[a.id] = a
+        except Exception:
+            self._approvals = {}
 
-    def create(self, tool_name: str, arguments: dict[str, Any]) -> ApprovalRequest:
-        req = ApprovalRequest(tool_name=tool_name, arguments=arguments)
-        self._requests[req.id] = req
-        return req
+    def _save(self) -> None:
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        self._path.write_text(
+            json.dumps([asdict(a) for a in self._approvals.values()], indent=2), "utf-8"
+        )
 
-    def resolve(self, request_id: str, approved: bool) -> ApprovalRequest | None:
-        req = self._requests.get(request_id)
-        if req is None or req.status != ApprovalStatus.PENDING:
-            return None
-        if req.is_expired:
-            req.status = ApprovalStatus.EXPIRED
-            return req
-        req.status = ApprovalStatus.APPROVED if approved else ApprovalStatus.DENIED
-        return req
+    def create(
+        self,
+        *,
+        tool_name: str,
+        summary: str,
+        session_id: str,
+        tool_arguments: dict[str, Any],
+        timeout_ms: int = 300000,
+    ) -> Approval:
+        now = int(time.time() * 1000)
+        a = Approval(
+            id=str(uuid.uuid4()),
+            created_at_ms=now,
+            expires_at_ms=now + timeout_ms,
+            tool_name=tool_name,
+            summary=summary,
+            session_id=session_id,
+            tool_arguments=tool_arguments,
+        )
+        self._approvals[a.id] = a
+        self._save()
+        return a
 
-    def pending(self) -> list[ApprovalRequest]:
-        self._expire_stale()
-        return [r for r in self._requests.values() if r.status == ApprovalStatus.PENDING]
+    def pending(self) -> list[Approval]:
+        now = int(time.time() * 1000)
+        out: list[Approval] = []
+        for a in self._approvals.values():
+            if a.status == "pending" and now <= a.expires_at_ms:
+                out.append(a)
+            elif a.status == "pending" and now > a.expires_at_ms:
+                a.status = "expired"
+        self._save()
+        return out
 
-    def _expire_stale(self) -> None:
-        for req in self._requests.values():
-            if req.status == ApprovalStatus.PENDING and req.is_expired:
-                req.status = ApprovalStatus.EXPIRED
+    def get(self, approval_id: str) -> Approval | None:
+        return self._approvals.get(approval_id)
+
+    def resolve(
+        self, approval_id: str, decision: str, resolved_by: str | None = None
+    ) -> bool:
+        a = self._approvals.get(approval_id)
+        if not a or a.status != "pending":
+            return False
+        now = int(time.time() * 1000)
+        if now > a.expires_at_ms:
+            a.status = "expired"
+            self._save()
+            return False
+        if decision not in ("allow", "deny"):
+            return False
+        a.status = decision
+        a.resolved_by = resolved_by
+        a.resolved_at_ms = now
+        self._save()
+        return True

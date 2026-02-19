@@ -1,29 +1,8 @@
-"""Scope and role definitions for the permission model."""
-
 from __future__ import annotations
 
-from enum import Enum
+OPERATOR_READ = "operator.read"
+OPERATOR_WRITE = "operator.write"
+OPERATOR_APPROVALS = "operator.approvals"
+OPERATOR_ADMIN = "operator.admin"
 
-
-class Role(str, Enum):
-    ADMIN = "admin"
-    OPERATOR = "operator"
-    VIEWER = "viewer"
-
-
-class Scope(str, Enum):
-    READ = "read"
-    WRITE = "write"
-    EXEC = "exec"
-    APPROVE = "approve"
-    ADMIN = "admin"
-
-
-# Tools that always require explicit per-action approval regardless of role.
-HIGH_RISK_TOOLS: frozenset[str] = frozenset({
-    "shell_exec",
-    "write_file",
-    "delete_file",
-    "send_email",
-    "send_message",
-})
+DEFAULT_ADMIN_SCOPES = [OPERATOR_READ, OPERATOR_WRITE, OPERATOR_APPROVALS, OPERATOR_ADMIN]

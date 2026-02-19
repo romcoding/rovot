@@ -1,0 +1,60 @@
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+}
+#topbar {
+  padding: 10px 14px;
+  display: flex;
+  justify-content: space-between;
+  background: #1b1f24;
+  color: #fff;
+}
+#layout {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  height: calc(100vh - 44px);
+}
+#chat {
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid #ddd;
+}
+#messages {
+  flex: 1;
+  overflow: auto;
+  padding: 14px;
+}
+.msg {
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  max-width: 80%;
+  white-space: pre-wrap;
+}
+.msg.user {
+  background: #e8f0ff;
+  align-self: flex-end;
+}
+.msg.assistant {
+  background: #f4f4f4;
+  align-self: flex-start;
+}
+#composer {
+  display: flex;
+  gap: 8px;
+  padding: 12px;
+}
+#input {
+  flex: 1;
+  height: 60px;
+}
+#side {
+  padding: 12px;
+  overflow: auto;
+}
+.card {
+  border: 1px solid #ddd;
+  padding: 8px;
+  margin-bottom: 10px;
+  border-radius: 8px;
+}

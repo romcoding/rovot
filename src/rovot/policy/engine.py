@@ -1,49 +1,46 @@
-"""Policy engine -- permission checks and scope gating.
-
-Decides whether a given action is allowed, needs approval, or is denied
-based on the active role, scopes, and the tool being invoked.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
+from typing import Any
 
-from rovot.policy.scopes import HIGH_RISK_TOOLS, Role, Scope
-
-
-class Decision(str, Enum):
-    ALLOW = "allow"
-    NEEDS_APPROVAL = "needs_approval"
-    DENY = "deny"
+from rovot.policy.approvals import ApprovalManager, ApprovalRequired
+from rovot.policy.scopes import OPERATOR_APPROVALS, OPERATOR_WRITE
 
 
 @dataclass
-class PolicyResult:
-    decision: Decision
-    reason: str = ""
+class AuthContext:
+    token: str
+    scopes: list[str]
 
 
 class PolicyEngine:
-    def __init__(self, role: Role = Role.OPERATOR, scopes: frozenset[Scope] | None = None):
-        self._role = role
-        self._scopes = scopes or frozenset({Scope.READ, Scope.WRITE, Scope.EXEC})
+    def __init__(self, approvals: ApprovalManager):
+        self._approvals = approvals
 
-    def check(self, tool_name: str) -> PolicyResult:
-        """Evaluate whether *tool_name* may execute under the current policy."""
+    def require_scope(self, ctx: AuthContext, scope: str) -> None:
+        if scope not in ctx.scopes:
+            raise PermissionError(f"Missing scope: {scope}")
 
-        if self._role == Role.VIEWER:
-            if tool_name not in ("read_file", "list_dir", "web_fetch"):
-                return PolicyResult(Decision.DENY, "Viewer role cannot execute write/exec tools.")
+    def enforce_write_scope(self, ctx: AuthContext) -> None:
+        self.require_scope(ctx, OPERATOR_WRITE)
 
-        if tool_name in HIGH_RISK_TOOLS:
-            if Scope.APPROVE not in self._scopes:
-                return PolicyResult(
-                    Decision.NEEDS_APPROVAL,
-                    f"'{tool_name}' is high-risk and requires explicit approval.",
-                )
-
-        if tool_name == "shell_exec" and Scope.EXEC not in self._scopes:
-            return PolicyResult(Decision.DENY, "EXEC scope required for shell_exec.")
-
-        return PolicyResult(Decision.ALLOW)
+    def maybe_require_approval(
+        self,
+        *,
+        ctx: AuthContext,
+        session_id: str,
+        tool_name: str,
+        tool_args: dict[str, Any],
+        summary: str,
+        require: bool,
+    ) -> None:
+        if not require:
+            return
+        self.require_scope(ctx, OPERATOR_APPROVALS)
+        approval = self._approvals.create(
+            tool_name=tool_name,
+            summary=summary,
+            session_id=session_id,
+            tool_arguments=tool_args,
+        )
+        raise ApprovalRequired(approval.id, f"Approval required: {summary}")

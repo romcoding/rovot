@@ -1,0 +1,26 @@
+appId: com.rovot.desktop
+productName: Rovot
+files:
+  - main.js
+  - preload.js
+  - renderer/**
+  - scripts/**
+extraResources:
+  - from: ../
+    to: backend
+    filter:
+      - pyproject.toml
+      - src/**
+      - README.md
+directories:
+  output: dist
+mac:
+  target:
+    - dmg
+win:
+  target:
+    - nsis
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
