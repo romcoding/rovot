@@ -29,6 +29,7 @@ class ChatRequest(BaseModel):
 
 class ContinueRequest(BaseModel):
     session_id: str
+    approval_id: str | None = None
 
 
 class ChatResponse(BaseModel):
@@ -102,6 +103,28 @@ async def chat_continue(
     session = store.get(req.session_id)
     history = session.read_all()
     agent = _build_agent(state)
+
+    if req.approval_id:
+        a = state.approvals.get(req.approval_id)
+        if not a or a.session_id != session.id or a.status != "allow":
+            return ChatResponse(
+                reply="Invalid or non-allowed approval_id.",
+                session_id=session.id,
+                tool_calls=[],
+                pending_approval_id=None,
+            )
+        result = await agent._tools.invoke(  # noqa: SLF001
+            auth,
+            session.id,
+            a.tool_name,
+            a.tool_arguments or {},
+            tool_call_id=a.tool_call_id,
+            approved=True,
+        )
+        history.append(Message(role="tool", content=str(result), tool_call_id=a.tool_call_id))
+        session.append(Message(role="tool", content=str(result), tool_call_id=a.tool_call_id))
+        state.approvals.consume(a.id)
+
     resp = await agent.run(auth=auth, session_id=session.id, history=history)
     session.append(Message(role="assistant", content=resp.reply))
     await state.ws.broadcast(

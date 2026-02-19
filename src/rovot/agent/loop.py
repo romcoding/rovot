@@ -47,7 +47,11 @@ class AgentLoop:
                 all_tool_calls.append(tc)
                 try:
                     result = await self._tools.invoke(
-                        auth, session_id, tc.get("name") or "", tc.get("arguments") or {}
+                        auth,
+                        session_id,
+                        tc.get("name") or "",
+                        tc.get("arguments") or {},
+                        tool_call_id=tc.get("id") or None,
                     )
                     msgs.append(
                         Message(role="tool", content=str(result), tool_call_id=tc.get("id"))

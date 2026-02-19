@@ -62,7 +62,10 @@ async function refreshApprovals() {
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify({ session_id: currentSessionId }),
+          body: JSON.stringify({
+            session_id: currentSessionId,
+            approval_id: id,
+          }),
         });
         const d2 = await r2.json();
         addMsg("assistant", d2.reply);

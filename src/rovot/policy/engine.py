@@ -33,6 +33,7 @@ class PolicyEngine:
         tool_args: dict[str, Any],
         summary: str,
         require: bool,
+        tool_call_id: str | None = None,
     ) -> None:
         if not require:
             return
@@ -42,5 +43,6 @@ class PolicyEngine:
             summary=summary,
             session_id=session_id,
             tool_arguments=tool_args,
+            tool_call_id=tool_call_id,
         )
         raise ApprovalRequired(approval.id, f"Approval required: {summary}")

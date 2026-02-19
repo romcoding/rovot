@@ -22,10 +22,12 @@ class Approval:
     tool_name: str
     summary: str
     session_id: str
-    status: str = "pending"  # pending | allow | deny | expired
+    status: str = "pending"  # pending | allow | deny | expired | consumed
     resolved_by: str | None = None
     resolved_at_ms: int | None = None
     tool_arguments: dict[str, Any] | None = None
+    tool_call_id: str | None = None
+    consumed_at_ms: int | None = None
 
 
 class ApprovalManager:
@@ -58,6 +60,7 @@ class ApprovalManager:
         summary: str,
         session_id: str,
         tool_arguments: dict[str, Any],
+        tool_call_id: str | None = None,
         timeout_ms: int = 300000,
     ) -> Approval:
         now = int(time.time() * 1000)
@@ -69,6 +72,7 @@ class ApprovalManager:
             summary=summary,
             session_id=session_id,
             tool_arguments=tool_arguments,
+            tool_call_id=tool_call_id,
         )
         self._approvals[a.id] = a
         self._save()
@@ -87,6 +91,16 @@ class ApprovalManager:
 
     def get(self, approval_id: str) -> Approval | None:
         return self._approvals.get(approval_id)
+
+    def consume(self, approval_id: str) -> bool:
+        """Mark an allowed approval as consumed (one-shot execution)."""
+        a = self._approvals.get(approval_id)
+        if not a or a.status != "allow":
+            return False
+        a.status = "consumed"
+        a.consumed_at_ms = int(time.time() * 1000)
+        self._save()
+        return True
 
     def resolve(
         self, approval_id: str, decision: str, resolved_by: str | None = None
