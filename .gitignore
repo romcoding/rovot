@@ -14,3 +14,4 @@ venv/
 desktop/node_modules/
 desktop/dist/
 desktop/.cache/
+desktop/backend-bin/

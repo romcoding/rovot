@@ -13,7 +13,6 @@ from rovot.agent.tools.builtin_exec import ExecConfig, register_exec_tool
 from rovot.agent.tools.builtin_fs import register_fs_tools
 from rovot.agent.tools.builtin_web import register_web_tools
 from rovot.agent.tools.registry import ToolRegistry
-from rovot.audit import AuditLogger
 from rovot.connectors.loader import load_connectors
 from rovot.policy.engine import AuthContext
 from rovot.providers.openai_compat import OpenAICompatProvider
@@ -77,9 +76,10 @@ async def chat(
     agent = _build_agent(state)
     resp = await agent.run(auth=auth, session_id=session.id, history=history)
     session.append(Message(role="assistant", content=resp.reply))
-    AuditLogger(path=settings.data_dir / "audit.log").log(
-        "chat.turn", {"session_id": session.id, "pending": bool(resp.pending_approval_id)}
-    )
+    if state.audit:
+        state.audit.log(
+            "chat.turn", {"session_id": session.id, "pending": bool(resp.pending_approval_id)}
+        )
     await state.ws.broadcast(
         "chat.reply",
         {"session_id": session.id, "pending_approval_id": resp.pending_approval_id},

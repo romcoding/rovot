@@ -6,21 +6,44 @@ files:
   - renderer/**
   - scripts/**
 extraResources:
-  - from: ../
-    to: backend
+  - from: backend-bin
+    to: backend-bin
     filter:
-      - pyproject.toml
-      - src/**
-      - README.md
+      - "**/*"
 directories:
   output: dist
 mac:
   target:
     - dmg
+  icon: build/icon.icns
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: entitlements.mac.plist
+  entitlementsInherit: entitlements.mac.plist
+dmg:
+  background: build/dmg-background.png
+  window:
+    width: 540
+    height: 380
+  contents:
+    - x: 140
+      y: 200
+      type: file
+    - x: 400
+      y: 200
+      type: link
+      path: /Applications
+  title: "Install Rovot"
 win:
   target:
     - nsis
+  icon: build/icon.ico
 nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  license: ../LICENSE
+  deleteAppDataOnUninstall: false
+afterSign: scripts/notarize.js

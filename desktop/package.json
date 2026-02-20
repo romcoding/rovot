@@ -7,10 +7,18 @@
     "dev": "electron .",
     "dist:mac": "electron-builder -m",
     "dist:win": "electron-builder -w",
-    "dist": "electron-builder"
+    "dist": "electron-builder",
+    "build:backend": "bash scripts/build-backend.sh",
+    "build:backend:arm64": "bash scripts/build-backend.sh arm64",
+    "build:backend:x64": "bash scripts/build-backend.sh x86_64",
+    "build:backend:universal2": "bash scripts/build-backend.sh universal2"
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9"
   },
   "devDependencies": {
     "electron": "^30.0.0",
-    "electron-builder": "^24.13.3"
+    "electron-builder": "^24.13.3",
+    "@electron/notarize": "^2.5.0"
   }
 }

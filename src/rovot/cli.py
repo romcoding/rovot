@@ -58,18 +58,60 @@ def start(
 
 @app.command()
 def doctor() -> None:
-    """Check config, interface binding, and connector permissions."""
-    s, _, _ = _settings_and_stores()
+    """Check config, interface binding, secrets, and permissions."""
+    s, _, secrets = _settings_and_stores()
     issues: list[str] = []
+    warnings: list[str] = []
+
     if s.host != "127.0.0.1":
-        issues.append(f"Control plane binds to {s.host} (recommended: 127.0.0.1)")
+        issues.append(
+            f"Control plane binds to {s.host} -- this exposes the daemon to the network. "
+            "Use 127.0.0.1 unless you understand the risks (see OpenClaw security guidance)."
+        )
+
     if not s.workspace_dir.is_dir():
-        issues.append(f"Workspace missing: {s.workspace_dir}")
+        issues.append(f"Workspace directory missing: {s.workspace_dir}")
+
+    token_file = s.data_dir / "auth_token.txt"
+    if token_file.exists():
+        import stat
+
+        mode = token_file.stat().st_mode
+        if mode & (stat.S_IRGRP | stat.S_IROTH):
+            warnings.append(
+                f"Auth token file {token_file} is readable by group/others. "
+                "Run: chmod 600 " + str(token_file)
+            )
+    else:
+        issues.append(f"Auth token file missing: {token_file}")
+
+    fallback = secrets.fallback_path
+    if fallback.exists():
+        import stat
+
+        mode = fallback.stat().st_mode
+        if mode & (stat.S_IRGRP | stat.S_IROTH):
+            warnings.append(
+                f"Secrets fallback file {fallback} is readable by group/others. "
+                "Run: chmod 600 " + str(fallback)
+            )
+
+    try:
+        import keyring as _kr
+
+        _kr.get_password("rovot", "__doctor_probe__")
+        typer.echo("[ok] OS keyring backend available")
+    except Exception:
+        warnings.append("OS keyring backend unavailable -- secrets will use fallback file storage")
+
+    for w in warnings:
+        typer.echo(f"[warn] {w}")
+    for i in issues:
+        typer.echo(f"[FAIL] {i}")
     if issues:
-        for i in issues:
-            typer.echo(f"[!] {i}")
         raise typer.Exit(code=1)
-    typer.echo("All checks passed.")
+    if not warnings and not issues:
+        typer.echo("All checks passed.")
 
 
 @app.command()
@@ -112,6 +154,15 @@ def secret_set(key: str, value: str) -> None:
     s = Settings()
     secrets = SecretsStore(service="rovot", fallback_path=s.data_dir / "secrets.json")
     secrets.set(key, value)
+    typer.echo("ok")
+
+
+@secret_app.command("delete")
+def secret_delete(key: str) -> None:
+    """Remove a secret from OS keychain (or fallback file)."""
+    s = Settings()
+    secrets = SecretsStore(service="rovot", fallback_path=s.data_dir / "secrets.json")
+    secrets.delete(key)
     typer.echo("ok")
 
 

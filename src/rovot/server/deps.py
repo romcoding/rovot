@@ -8,6 +8,7 @@ from pathlib import Path
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from rovot.audit import AuditLogger
 from rovot.config import ConfigStore, Settings
 from rovot.policy.approvals import ApprovalManager
 from rovot.policy.engine import AuthContext, PolicyEngine
@@ -26,6 +27,7 @@ class AppState:
     approvals: ApprovalManager
     policy: PolicyEngine
     ws: WebSocketHub
+    audit: AuditLogger | None = None
 
 
 def get_state(req: Request) -> AppState:
