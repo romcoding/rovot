@@ -1,4 +1,4 @@
-const { app, BrowserWindow } = require("electron");
+const { app, BrowserWindow, shell } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const { spawn } = require("child_process");
@@ -35,12 +35,6 @@ function resolveDaemonBinary() {
   return process.platform === "win32" ? "rovot.exe" : "rovot";
 }
 
-function daemonArgs(binary) {
-  const isBundle = path.basename(binary).startsWith("rovot-daemon");
-  if (isBundle) return ["start", "--host", "127.0.0.1", "--port", "18789"];
-  return ["start", "--host", "127.0.0.1", "--port", "18789"];
-}
-
 async function startDaemon() {
   const port = 18789;
   try {
@@ -48,7 +42,9 @@ async function startDaemon() {
     return;
   } catch (_) {}
   const bin = resolveDaemonBinary();
-  daemon = spawn(bin, daemonArgs(bin), { stdio: "ignore" });
+  daemon = spawn(bin, ["start", "--host", "127.0.0.1", "--port", "18789"], {
+    stdio: "ignore",
+  });
   daemon.on("error", (err) => {
     console.error("Failed to start daemon:", err.message);
   });
@@ -67,6 +63,21 @@ function createWindow() {
     },
   });
   win.loadFile(path.join(__dirname, "renderer", "index.html"));
+
+  win.webContents.on("will-navigate", (e, url) => {
+    const appOrigin = `file://${path.join(__dirname, "renderer")}`;
+    if (!url.startsWith(appOrigin) && !url.startsWith("file://")) {
+      e.preventDefault();
+      shell.openExternal(url);
+    }
+  });
+
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith("http://") || url.startsWith("https://")) {
+      shell.openExternal(url);
+    }
+    return { action: "deny" };
+  });
 }
 
 function initAutoUpdater() {

@@ -11,10 +11,13 @@ const inputEl = document.getElementById("input");
 const sendBtn = document.getElementById("send");
 const recBtn = document.getElementById("record");
 const onboardingEl = document.getElementById("onboarding");
+const timelineEventsEl = document.getElementById("timeline-events");
 
 let currentSessionId = null;
 let ws = null;
 let cachedConfig = null;
+let isSending = false;
+let timelineCollapsed = false;
 
 // ── Helpers ──
 
@@ -24,13 +27,93 @@ async function api(path, opts = {}) {
   return fetch(baseUrl + path, { ...opts, headers });
 }
 
+function escapeHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function renderMarkdown(text) {
+  let html = escapeHtml(text);
+  html = html.replace(/```([\s\S]*?)```/g, '<pre class="md-code-block"><code>$1</code></pre>');
+  html = html.replace(/`([^`]+)`/g, '<code class="md-inline-code">$1</code>');
+  html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  html = html.replace(/\n/g, "<br>");
+  return html;
+}
+
 function addMsg(role, text) {
+  removeTypingIndicator();
   const div = document.createElement("div");
   div.className = `msg ${role}`;
-  div.textContent = text;
+  if (role === "assistant") {
+    div.innerHTML = renderMarkdown(text);
+  } else {
+    div.textContent = text;
+  }
   messagesEl.appendChild(div);
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
+
+function showTypingIndicator() {
+  if (document.getElementById("typing-indicator")) return;
+  const div = document.createElement("div");
+  div.id = "typing-indicator";
+  div.className = "msg assistant typing";
+  div.innerHTML = '<span class="dot"></span><span class="dot"></span><span class="dot"></span>';
+  messagesEl.appendChild(div);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function removeTypingIndicator() {
+  const el = document.getElementById("typing-indicator");
+  if (el) el.remove();
+}
+
+function setSendingState(sending) {
+  isSending = sending;
+  sendBtn.disabled = sending;
+  sendBtn.textContent = sending ? "..." : "Send";
+  inputEl.disabled = sending;
+}
+
+// ── Activity Timeline ──
+
+function addTimelineEvent(type, detail) {
+  const item = document.createElement("div");
+  item.className = `timeline-item timeline-${type}`;
+
+  const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const icons = {
+    tool_call: "&#9881;",
+    approval: "&#9888;",
+    approval_resolved: "&#10003;",
+    error: "&#10007;",
+    chat: "&#9993;",
+  };
+
+  item.innerHTML = `
+    <div class="timeline-icon">${icons[type] || "&#8226;"}</div>
+    <div class="timeline-body">
+      <div class="timeline-meta">
+        <span class="timeline-type">${escapeHtml(type.replace("_", " "))}</span>
+        <span class="timeline-time">${time}</span>
+      </div>
+      <div class="timeline-detail">${escapeHtml(detail)}</div>
+    </div>
+  `;
+
+  timelineEventsEl.prepend(item);
+
+  while (timelineEventsEl.children.length > 200) {
+    timelineEventsEl.removeChild(timelineEventsEl.lastChild);
+  }
+}
+
+document.getElementById("toggle-timeline").addEventListener("click", () => {
+  timelineCollapsed = !timelineCollapsed;
+  document.getElementById("activity-timeline").classList.toggle("collapsed", timelineCollapsed);
+});
 
 // ── Sidebar navigation ──
 
@@ -55,16 +138,17 @@ async function checkOnboarding() {
     const r = await api("/config");
     if (r.ok) {
       cachedConfig = await r.json();
-      onboardingEl.classList.add("hidden");
-      updateIndicators();
-      return;
+      if (cachedConfig.onboarded === true) {
+        onboardingEl.classList.add("hidden");
+        updateIndicators();
+        return;
+      }
     }
   } catch (_) {}
   onboardingEl.classList.remove("hidden");
 }
 
 function setupOnboarding() {
-  // Compute mode radio cards
   document.querySelectorAll('.option-card input[name="compute"]').forEach((radio) => {
     radio.addEventListener("change", () => {
       document.querySelectorAll(".option-card").forEach((c) => c.classList.remove("selected"));
@@ -74,7 +158,6 @@ function setupOnboarding() {
     });
   });
 
-  // Step navigation
   document.querySelectorAll("[data-next]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const next = parseInt(btn.getAttribute("data-next"));
@@ -143,7 +226,6 @@ async function finishOnboarding() {
   const compute = document.querySelector('input[name="compute"]:checked').value;
 
   if (compute === "local") {
-    // Pick the first detected server or default to LM Studio
     const found = document.querySelector(".probe-item.found");
     const url = found ? found.getAttribute("data-url") : "http://localhost:1234/v1";
     await api("/config", {
@@ -183,6 +265,12 @@ async function finishOnboarding() {
     body: JSON.stringify({ path: "connectors.email.enabled", value: emailEnabled }),
   });
 
+  await api("/config", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ path: "onboarded", value: true }),
+  });
+
   onboardingEl.classList.add("hidden");
   await refreshConfig();
 }
@@ -199,11 +287,11 @@ async function refreshConfig() {
 
 function updateIndicators() {
   if (!cachedConfig) return;
-  const baseUrl = cachedConfig.model?.base_url || "";
+  const modelBaseUrl = cachedConfig.model?.base_url || "";
   const modelName = cachedConfig.model?.model || "";
-  modelIndicator.textContent = modelName || baseUrl.replace(/https?:\/\//, "").split("/")[0] || "--";
+  modelIndicator.textContent = modelName || modelBaseUrl.replace(/https?:\/\//, "").split("/")[0] || "--";
 
-  const isLocal = baseUrl.includes("localhost") || baseUrl.includes("127.0.0.1");
+  const isLocal = modelBaseUrl.includes("localhost") || modelBaseUrl.includes("127.0.0.1");
   privacyIndicator.textContent = isLocal ? "Local" : "Cloud";
   privacyIndicator.className = "indicator " + (isLocal ? "privacy-local" : "privacy-cloud");
 }
@@ -233,7 +321,7 @@ async function refreshApprovals() {
 
     card.innerHTML = `
       <div class="approval-header">
-        <strong>${a.tool_name}</strong>
+        <strong>${escapeHtml(a.tool_name)}</strong>
         <span class="badge">Requires approval</span>
       </div>
       <div class="approval-detail">${escapeHtml(detail)}</div>
@@ -243,6 +331,8 @@ async function refreshApprovals() {
       </div>
     `;
     approvalsEl.appendChild(card);
+
+    addTimelineEvent("approval", `${a.tool_name}: approval requested`);
   });
 
   approvalsEl.querySelectorAll("button[data-id]").forEach((btn) => {
@@ -254,6 +344,7 @@ async function refreshApprovals() {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ decision }),
       });
+      addTimelineEvent("approval_resolved", `${decision}: ${id.slice(0, 8)}`);
       await refreshApprovals();
       if (currentSessionId) {
         const r2 = await api("/chat/continue", {
@@ -268,19 +359,16 @@ async function refreshApprovals() {
   });
 }
 
-function escapeHtml(str) {
-  const div = document.createElement("div");
-  div.textContent = str;
-  return div.innerHTML;
-}
-
 // ── Chat ──
 
 async function sendMessage() {
   const msg = inputEl.value.trim();
-  if (!msg) return;
+  if (!msg || isSending) return;
   inputEl.value = "";
   addMsg("user", msg);
+  addTimelineEvent("chat", "Message sent");
+  setSendingState(true);
+  showTypingIndicator();
   try {
     const r = await api("/chat", {
       method: "POST",
@@ -290,15 +378,40 @@ async function sendMessage() {
     const data = await r.json();
     currentSessionId = data.session_id;
     addMsg("assistant", data.reply);
+    addTimelineEvent("chat", "Reply received");
+
+    if (data.tool_calls) {
+      data.tool_calls.forEach((tc) => {
+        addTimelineEvent("tool_call", `${tc.name || tc.tool_name || "tool"}(${JSON.stringify(tc.arguments || tc.args || {}).slice(0, 80)})`);
+      });
+    }
+
     await refreshApprovals();
   } catch (err) {
+    removeTypingIndicator();
     addMsg("assistant", `Error: ${err.message}`);
+    addTimelineEvent("error", err.message);
+  } finally {
+    setSendingState(false);
   }
 }
 
 sendBtn.onclick = sendMessage;
+
 inputEl.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) sendMessage();
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+});
+
+// ── New Chat ──
+
+document.getElementById("new-chat").addEventListener("click", () => {
+  currentSessionId = null;
+  messagesEl.innerHTML = "";
+  approvalsEl.innerHTML = "";
+  addTimelineEvent("chat", "New conversation started");
 });
 
 // ── WebSocket ──
@@ -313,8 +426,20 @@ function connectWs() {
   ws.onmessage = (ev) => {
     try {
       const msg = JSON.parse(ev.data);
-      if (msg.event === "chat.reply") refreshApprovals();
-      if (msg.event === "approval.resolved") refreshApprovals();
+      if (msg.event === "chat.reply") {
+        refreshApprovals();
+        addTimelineEvent("chat", "Server pushed reply");
+      }
+      if (msg.event === "approval.resolved") {
+        refreshApprovals();
+        addTimelineEvent("approval_resolved", "Approval resolved via WS");
+      }
+      if (msg.event === "tool.call") {
+        addTimelineEvent("tool_call", msg.data?.tool || "tool invoked");
+      }
+      if (msg.event === "tool.result") {
+        addTimelineEvent("tool_call", `Result: ${(msg.data?.summary || "done").slice(0, 80)}`);
+      }
     } catch (_) {}
   };
 }
@@ -365,7 +490,8 @@ async function loadModelsView() {
   }
 
   const container = document.getElementById("detected-models");
-  container.innerHTML = '<div class="probe-item scanning"><span class="probe-label">Scanning...</span><span class="probe-status">...</span></div>';
+  container.innerHTML =
+    '<div class="probe-item scanning"><span class="probe-label">Scanning...</span><span class="probe-status">...</span></div>';
 
   const servers = [
     { name: "LM Studio", url: "http://localhost:1234/v1" },
@@ -387,8 +513,73 @@ async function loadModelsView() {
         const models = data.models || [];
         el.classList.remove("scanning");
         el.classList.add("found");
-        el.querySelector(".probe-status").textContent =
-          models.length > 0 ? models.map((m) => m.id || m).join(", ") : "online";
+
+        let statusHtml = models.length > 0
+          ? models.map((m) => m.id || m).join(", ")
+          : "online";
+
+        el.querySelector(".probe-status").textContent = statusHtml;
+
+        const actions = document.createElement("div");
+        actions.className = "probe-actions";
+
+        const useBtn = document.createElement("button");
+        useBtn.className = "btn primary btn-sm";
+        useBtn.textContent = "Use this";
+        useBtn.addEventListener("click", async () => {
+          document.getElementById("model-base-url").value = s.url;
+          await api("/config", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ path: "model.base_url", value: s.url }),
+          });
+          await refreshConfig();
+        });
+        actions.appendChild(useBtn);
+
+        if (models.length > 1) {
+          const select = document.createElement("select");
+          select.className = "model-select";
+          models.forEach((m) => {
+            const opt = document.createElement("option");
+            opt.value = m.id || m;
+            opt.textContent = m.id || m;
+            select.appendChild(opt);
+          });
+          select.addEventListener("change", async () => {
+            document.getElementById("model-name").value = select.value;
+            await api("/config", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+              body: JSON.stringify({ path: "model.model", value: select.value }),
+            });
+            await refreshConfig();
+          });
+          actions.appendChild(select);
+        } else if (models.length === 1) {
+          const pickBtn = document.createElement("button");
+          pickBtn.className = "btn secondary btn-sm";
+          pickBtn.textContent = models[0].id || models[0];
+          pickBtn.addEventListener("click", async () => {
+            const mName = models[0].id || models[0];
+            document.getElementById("model-name").value = mName;
+            document.getElementById("model-base-url").value = s.url;
+            await api("/config", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+              body: JSON.stringify({ path: "model.base_url", value: s.url }),
+            });
+            await api("/config", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+              body: JSON.stringify({ path: "model.model", value: mName }),
+            });
+            await refreshConfig();
+          });
+          actions.appendChild(pickBtn);
+        }
+
+        el.appendChild(actions);
       } else {
         throw new Error();
       }
@@ -437,60 +628,88 @@ async function loadConnectorsView() {
       name: "Filesystem",
       desc: "Read and write files in the workspace",
       enabled: c.filesystem_enabled !== false,
-      configurable: true,
-      path: "connectors.filesystem_enabled",
+      configPath: "connectors.filesystem_enabled",
     },
     {
       name: "Email (IMAP/SMTP)",
-      desc: "Read inbox and send emails",
+      desc: "Read inbox and send emails (approval required for sending)",
       enabled: c.email?.enabled === true,
-      configurable: true,
-      path: "connectors.email.enabled",
+      configPath: "connectors.email.enabled",
       consent: c.email?.consent_granted,
     },
     {
       name: "Calendar",
       desc: "Local calendar integration",
       enabled: c.calendar_enabled === true,
-      configurable: false,
+      configPath: null,
       stub: true,
     },
     {
       name: "Messaging",
       desc: "Local messaging integration",
       enabled: c.messaging_enabled === true,
-      configurable: false,
+      configPath: null,
       stub: true,
     },
   ];
 
-  list.innerHTML = connectors
-    .map((cn) => {
-      let statusClass = cn.stub ? "stub" : cn.enabled ? "enabled" : "disabled";
-      let statusText = cn.stub ? "Coming soon" : cn.enabled ? "Enabled" : "Disabled";
-      if (cn.consent === false && cn.enabled) statusText = "Needs consent";
-      return `
-        <div class="connector-card">
-          <div class="connector-info">
-            <strong>${cn.name}</strong>
-            <span>${cn.desc}</span>
-          </div>
-          <span class="connector-status ${statusClass}">${statusText}</span>
-        </div>`;
-    })
-    .join("");
+  list.innerHTML = "";
+  connectors.forEach((cn) => {
+    const row = document.createElement("label");
+    row.className = "toggle-row connector-toggle";
+
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = cn.enabled;
+    cb.disabled = cn.stub || false;
+
+    if (cn.configPath) {
+      cb.addEventListener("change", async () => {
+        await api("/config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ path: cn.configPath, value: cb.checked }),
+        });
+        await refreshConfig();
+      });
+    }
+
+    const info = document.createElement("div");
+    let subtitle = cn.desc;
+    if (cn.stub) subtitle = "Coming soon";
+    else if (cn.consent === false && cn.enabled) subtitle += " (needs consent)";
+    info.innerHTML = `<strong>${escapeHtml(cn.name)}</strong><span${cn.stub ? ' class="muted"' : ""}>${escapeHtml(subtitle)}</span>`;
+
+    row.appendChild(cb);
+    row.appendChild(info);
+    list.appendChild(row);
+  });
 }
 
 // ── Security view ──
 
 async function loadSecurityView() {
   await refreshConfig();
-  document.getElementById("sec-binding").textContent = "127.0.0.1:18789 (loopback only)";
+
+  try {
+    const hr = await api("/health");
+    if (hr.ok) {
+      const hd = await hr.json();
+      document.getElementById("sec-binding").textContent =
+        `${hd.host || "127.0.0.1"}:${hd.port || 18789}${hd.host === "127.0.0.1" ? " (loopback only)" : " (WARNING: not loopback)"}`;
+      document.getElementById("sec-workspace").textContent =
+        hd.workspace_dir || "~/rovot-workspace";
+    }
+  } catch (_) {
+    document.getElementById("sec-binding").textContent = "127.0.0.1:18789 (loopback only)";
+    document.getElementById("sec-workspace").textContent = "~/rovot-workspace (default)";
+  }
+
   document.getElementById("sec-sandbox").textContent =
     cachedConfig?.security_mode || "workspace";
-  document.getElementById("sec-workspace").textContent =
-    "~/rovot-workspace (default)";
-  document.getElementById("sec-token").textContent = token ? "Token file present and loaded" : "No token file found";
+  document.getElementById("sec-token").textContent = token
+    ? "Token file present and loaded"
+    : "No token file found";
 
   const c = cachedConfig?.connectors || {};
   const perms = [];
@@ -511,17 +730,18 @@ async function loadLogsView() {
     if (r.ok) {
       const data = await r.json();
       const entries = data.entries || [];
-      container.innerHTML = entries.length === 0
-        ? '<div class="info-box">No log entries yet.</div>'
-        : entries
-            .map(
-              (e) => `<div class="log-entry">
+      container.innerHTML =
+        entries.length === 0
+          ? '<div class="info-box">No log entries yet.</div>'
+          : entries
+              .map(
+                (e) => `<div class="log-entry">
               <span class="log-ts">${new Date(e.ts).toLocaleTimeString()}</span>
               <span class="log-event">${escapeHtml(e.event)}</span>
               <span class="log-payload">${escapeHtml(JSON.stringify(e.payload || {}))}</span>
             </div>`
-            )
-            .join("");
+              )
+              .join("");
     } else {
       container.innerHTML = '<div class="info-box">Audit endpoint not available.</div>';
     }

@@ -2,6 +2,8 @@
 <html>
   <head>
     <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy"
+          content="default-src 'self'; connect-src 'self' http://127.0.0.1:18789 ws://127.0.0.1:18789; style-src 'self' 'unsafe-inline'; script-src 'self'" />
     <title>Rovot</title>
     <link rel="stylesheet" href="style.css" />
   </head>
@@ -163,18 +165,35 @@
         <main id="content">
           <!-- Chat view -->
           <section id="view-chat" class="view active">
-            <div class="chat-container">
-              <div id="messages"></div>
-              <div id="approvals"></div>
-              <div id="composer">
-                <textarea id="input" placeholder="Type a message... (Ctrl+Enter to send)"></textarea>
-                <div class="composer-actions">
-                  <button id="record" class="btn icon" title="Push to talk">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+            <div class="chat-layout">
+              <div class="chat-main">
+                <div class="chat-header">
+                  <button id="new-chat" class="btn secondary btn-sm" title="Start a new conversation">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    New chat
                   </button>
-                  <button id="send" class="btn primary">Send</button>
+                </div>
+                <div id="messages"></div>
+                <div id="approvals"></div>
+                <div id="composer">
+                  <textarea id="input" placeholder="Type a message... (Enter to send, Shift+Enter for newline)"></textarea>
+                  <div class="composer-actions">
+                    <button id="record" class="btn icon" title="Push to talk">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                    </button>
+                    <button id="send" class="btn primary">Send</button>
+                  </div>
                 </div>
               </div>
+              <aside id="activity-timeline" class="timeline-panel">
+                <div class="timeline-header">
+                  <h3>Activity</h3>
+                  <button id="toggle-timeline" class="btn icon btn-sm" title="Toggle timeline">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+                  </button>
+                </div>
+                <div id="timeline-events" class="timeline-events"></div>
+              </aside>
             </div>
           </section>
 
@@ -195,7 +214,7 @@
               <div class="settings-group">
                 <h3>Detected servers</h3>
                 <div id="detected-models" class="probe-list"></div>
-                <button id="rescan-models" class="btn secondary">Rescan</button>
+                <button id="rescan-models" class="btn secondary" style="margin-top:10px">Rescan</button>
               </div>
             </div>
           </section>

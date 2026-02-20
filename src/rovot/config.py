@@ -59,6 +59,7 @@ class VoiceConfig(BaseModel):
 
 
 class AppConfig(BaseModel):
+    onboarded: bool = False
     security_mode: SecurityMode = SecurityMode.WORKSPACE
     model: ModelConfig = Field(default_factory=ModelConfig)
     connectors: ConnectorsConfig = Field(default_factory=ConnectorsConfig)
