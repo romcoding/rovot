@@ -37,7 +37,7 @@ function resolveDaemonBinary() {
 
 function daemonArgs(binary) {
   const isBundle = path.basename(binary).startsWith("rovot-daemon");
-  if (isBundle) return ["--host", "127.0.0.1", "--port", "18789"];
+  if (isBundle) return ["start", "--host", "127.0.0.1", "--port", "18789"];
   return ["start", "--host", "127.0.0.1", "--port", "18789"];
 }
 
