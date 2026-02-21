@@ -60,7 +60,9 @@ class VoiceConfig(BaseModel):
 
 class AppConfig(BaseModel):
     onboarded: bool = False
+    use_keychain: bool = True
     security_mode: SecurityMode = SecurityMode.WORKSPACE
+    allowed_domains: list[str] = Field(default_factory=list)
     model: ModelConfig = Field(default_factory=ModelConfig)
     connectors: ConnectorsConfig = Field(default_factory=ConnectorsConfig)
     voice: VoiceConfig = Field(default_factory=VoiceConfig)

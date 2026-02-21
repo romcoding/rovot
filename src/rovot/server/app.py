@@ -37,6 +37,8 @@ def create_app() -> FastAPI:
     cfg_store.load()
     cfg_store.save()
 
+    secrets.use_keychain = cfg_store.config.use_keychain
+
     approvals_store = ApprovalManager(path=settings.data_dir / "approvals.json")
     policy = PolicyEngine(approvals_store)
     ws = WebSocketHub()

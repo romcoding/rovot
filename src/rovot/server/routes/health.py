@@ -18,4 +18,6 @@ async def health(state: AppState = Depends(get_state)) -> dict[str, Any]:
         "host": state.settings.host,
         "port": state.settings.port,
         "workspace_dir": str(state.settings.workspace_dir),
+        "use_keychain": state.secrets.use_keychain,
+        "keychain_available": state.secrets.keychain_available,
     }

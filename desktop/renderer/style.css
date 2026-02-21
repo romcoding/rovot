@@ -123,7 +123,7 @@ body {
   -webkit-app-region: drag;
   user-select: none;
 }
-.topbar-left { font-weight: 600; font-size: 14px; letter-spacing: 0.5px; }
+.topbar-left { font-weight: 600; font-size: 14px; letter-spacing: 0.5px; -webkit-app-region: no-drag; }
 .topbar-right {
   display: flex;
   align-items: center;
@@ -734,4 +734,40 @@ body {
 .connector-toggle input[type="checkbox"]:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+/* -- Backend status overlay -- */
+.status-card {
+  text-align: center;
+}
+.status-card h2 {
+  font-size: 20px;
+  margin-bottom: 8px;
+}
+.status-card p {
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+  font-size: 13px;
+}
+.status-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  margin: 0 auto 16px;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.status-icon-error {
+  font-size: 36px;
+  color: var(--danger);
+  margin-bottom: 12px;
+}
+
+/* -- Security view toggle -- */
+.sec-toggle {
+  margin-top: 10px;
 }

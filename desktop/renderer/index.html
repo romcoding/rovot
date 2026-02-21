@@ -8,6 +8,23 @@
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
+    <!-- Backend connecting overlay -->
+    <div id="backend-status-overlay" class="overlay">
+      <div class="onboard-card status-card">
+        <div id="backend-connecting">
+          <div class="status-spinner"></div>
+          <h2>Connecting to backend...</h2>
+          <p>Waiting for the Rovot daemon to start.</p>
+        </div>
+        <div id="backend-error" class="hidden">
+          <div class="status-icon-error">&#10007;</div>
+          <h2>Backend unavailable</h2>
+          <p>Could not reach the Rovot daemon at 127.0.0.1:18789. Make sure it is running.</p>
+          <button id="backend-retry" class="btn primary">Retry</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Onboarding overlay -->
     <div id="onboarding" class="overlay hidden">
       <div class="onboard-card">
@@ -246,6 +263,21 @@
               <div class="settings-group">
                 <h3>Auth token</h3>
                 <div id="sec-token" class="info-box">Token file present</div>
+              </div>
+              <div class="settings-group">
+                <h3>Secret storage</h3>
+                <div id="sec-keychain" class="info-box">--</div>
+                <label class="toggle-row connector-toggle sec-toggle">
+                  <input type="checkbox" id="sec-keychain-toggle" />
+                  <div>
+                    <strong>Use OS Keychain</strong>
+                    <span>Store secrets in the macOS Keychain / Windows Credential Locker instead of a local file</span>
+                  </div>
+                </label>
+              </div>
+              <div class="settings-group">
+                <h3>Allowed domains (web.fetch)</h3>
+                <div id="sec-domains" class="info-box">--</div>
               </div>
               <div class="settings-group">
                 <h3>Connector permissions</h3>

@@ -12,6 +12,9 @@ const sendBtn = document.getElementById("send");
 const recBtn = document.getElementById("record");
 const onboardingEl = document.getElementById("onboarding");
 const timelineEventsEl = document.getElementById("timeline-events");
+const backendOverlay = document.getElementById("backend-status-overlay");
+const backendConnecting = document.getElementById("backend-connecting");
+const backendError = document.getElementById("backend-error");
 
 let currentSessionId = null;
 let ws = null;
@@ -131,9 +134,38 @@ document.querySelectorAll(".nav-item").forEach((btn) => {
   });
 });
 
-// ── Onboarding ──
+// ── Backend connection & Onboarding ──
+
+async function waitForBackend(maxAttempts = 15) {
+  backendOverlay.classList.remove("hidden");
+  backendConnecting.classList.remove("hidden");
+  backendError.classList.add("hidden");
+
+  for (let i = 0; i < maxAttempts; i++) {
+    try {
+      const r = await api("/health");
+      if (r.ok) {
+        backendOverlay.classList.add("hidden");
+        return true;
+      }
+    } catch (_) {}
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+
+  backendConnecting.classList.add("hidden");
+  backendError.classList.remove("hidden");
+  return false;
+}
+
+document.getElementById("backend-retry").addEventListener("click", async () => {
+  const ok = await waitForBackend(15);
+  if (ok) await checkOnboarding();
+});
 
 async function checkOnboarding() {
+  const backendReady = await waitForBackend(15);
+  if (!backendReady) return;
+
   try {
     const r = await api("/config");
     if (r.ok) {
@@ -144,7 +176,9 @@ async function checkOnboarding() {
         return;
       }
     }
-  } catch (_) {}
+  } catch (_) {
+    return;
+  }
   onboardingEl.classList.remove("hidden");
 }
 
@@ -691,14 +725,15 @@ async function loadConnectorsView() {
 async function loadSecurityView() {
   await refreshConfig();
 
+  let healthData = null;
   try {
     const hr = await api("/health");
     if (hr.ok) {
-      const hd = await hr.json();
+      healthData = await hr.json();
       document.getElementById("sec-binding").textContent =
-        `${hd.host || "127.0.0.1"}:${hd.port || 18789}${hd.host === "127.0.0.1" ? " (loopback only)" : " (WARNING: not loopback)"}`;
+        `${healthData.host || "127.0.0.1"}:${healthData.port || 18789}${healthData.host === "127.0.0.1" ? " (loopback only)" : " (WARNING: not loopback)"}`;
       document.getElementById("sec-workspace").textContent =
-        hd.workspace_dir || "~/rovot-workspace";
+        healthData.workspace_dir || "~/rovot-workspace";
     }
   } catch (_) {
     document.getElementById("sec-binding").textContent = "127.0.0.1:18789 (loopback only)";
@@ -710,6 +745,32 @@ async function loadSecurityView() {
   document.getElementById("sec-token").textContent = token
     ? "Token file present and loaded"
     : "No token file found";
+
+  const useKeychain = cachedConfig?.use_keychain !== false;
+  const keychainAvail = healthData?.keychain_available === true;
+  const keychainStatus = useKeychain
+    ? keychainAvail
+      ? "OS Keychain active and available"
+      : "OS Keychain enabled but unavailable (using file fallback)"
+    : "Disabled -- secrets stored in ~/.rovot/secrets.json (chmod 600)";
+  document.getElementById("sec-keychain").textContent = keychainStatus;
+
+  const keychainToggle = document.getElementById("sec-keychain-toggle");
+  keychainToggle.checked = useKeychain;
+  keychainToggle.onchange = async () => {
+    await api("/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ path: "use_keychain", value: keychainToggle.checked }),
+    });
+    await loadSecurityView();
+  };
+
+  const domains = cachedConfig?.allowed_domains || [];
+  document.getElementById("sec-domains").textContent =
+    domains.length > 0
+      ? `Restricted to: ${domains.join(", ")}`
+      : "No restrictions (all domains allowed, approval required per fetch)";
 
   const c = cachedConfig?.connectors || {};
   const perms = [];
@@ -754,7 +815,8 @@ document.getElementById("refresh-logs").addEventListener("click", loadLogsView);
 
 // ── Init ──
 
-connectWs();
-refreshApprovals();
 setupOnboarding();
-checkOnboarding();
+checkOnboarding().then(() => {
+  connectWs();
+  refreshApprovals();
+});

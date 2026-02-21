@@ -47,7 +47,7 @@ def _build_agent(state: AppState) -> AgentLoop:
     )
     connectors = load_connectors(cfg, workspace=settings.workspace_dir, secrets=state.secrets)
     tools = ToolRegistry(policy=state.policy)
-    register_web_tools(tools)
+    register_web_tools(tools, allowed_domains=cfg.allowed_domains)
     register_fs_tools(tools, connectors.fs, settings.workspace_dir)
     register_exec_tool(
         tools, ExecConfig(workspace=settings.workspace_dir, security_mode=cfg.security_mode.value)
