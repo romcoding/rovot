@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 
 from rovot import __version__
 from rovot.audit import AuditLogger
@@ -45,6 +46,12 @@ def create_app() -> FastAPI:
     audit_logger = AuditLogger(path=settings.data_dir / "audit.log")
 
     app = FastAPI(title="Rovot Control Plane", version=__version__, docs_url="/docs")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
     app.state.rovot_state = AppState(
         settings=settings,
         config_store=cfg_store,

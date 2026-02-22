@@ -39,15 +39,24 @@ async function startDaemon() {
   const port = 18789;
   try {
     await waitForHealth(port, 2);
+    console.log("Daemon already running on port", port);
     return;
   } catch (_) {}
+
   const bin = resolveDaemonBinary();
+  console.log("Starting daemon:", bin);
+
   daemon = spawn(bin, ["start", "--host", "127.0.0.1", "--port", "18789"], {
-    stdio: "ignore",
+    stdio: ["ignore", "ignore", "pipe"],
   });
+  daemon.stderr.on("data", (d) => console.error("daemon:", d.toString()));
   daemon.on("error", (err) => {
-    console.error("Failed to start daemon:", err.message);
+    console.error("Failed to spawn daemon:", err.message);
   });
+  daemon.on("exit", (code, signal) => {
+    console.error("Daemon exited:", { code, signal });
+  });
+
   await waitForHealth(port);
 }
 
@@ -90,7 +99,11 @@ function initAutoUpdater() {
 }
 
 app.whenReady().then(async () => {
-  await startDaemon();
+  try {
+    await startDaemon();
+  } catch (err) {
+    console.error("Daemon startup failed:", err.message);
+  }
   createWindow();
   initAutoUpdater();
 });
