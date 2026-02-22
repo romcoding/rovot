@@ -9,7 +9,21 @@ ARCH="${1:-}"
 rm -rf "$OUT"
 mkdir -p "$OUT"
 
-PYINSTALLER_ARGS=(--clean -F -n rovot-daemon -c -p "$ROOT/src" "$ROOT/src/rovot/cli.py")
+PYINSTALLER_ARGS=(
+  --clean -F -n rovot-daemon -c
+  -p "$ROOT/src"
+  --hidden-import uvicorn.logging
+  --hidden-import uvicorn.loops.auto
+  --hidden-import uvicorn.protocols.http.auto
+  --hidden-import uvicorn.protocols.http.h11_impl
+  --hidden-import uvicorn.protocols.websockets.auto
+  --hidden-import uvicorn.protocols.websockets.wsproto_impl
+  --hidden-import uvicorn.lifespan.on
+  --hidden-import multipart
+  --collect-submodules pydantic
+  --collect-submodules keyring
+  "$ROOT/src/rovot/cli.py"
+)
 
 if [[ "$(uname)" == "Darwin" && -n "$ARCH" ]]; then
   PYINSTALLER_ARGS+=(--target-architecture "$ARCH")

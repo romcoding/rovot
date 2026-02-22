@@ -1,5 +1,4 @@
 const baseUrl = window.rovot.baseUrl();
-const token = window.rovot.readToken();
 
 // DOM refs
 const statusEl = document.getElementById("connection-status");
@@ -24,9 +23,13 @@ let timelineCollapsed = false;
 
 // ── Helpers ──
 
+function getToken() {
+  return window.rovot.readToken();
+}
+
 async function api(path, opts = {}) {
   const headers = opts.headers || {};
-  headers["Authorization"] = `Bearer ${token}`;
+  headers["Authorization"] = `Bearer ${getToken()}`;
   return fetch(baseUrl + path, { ...opts, headers });
 }
 
@@ -154,6 +157,15 @@ async function waitForBackend(maxAttempts = 15) {
 
   backendConnecting.classList.add("hidden");
   backendError.classList.remove("hidden");
+
+  try {
+    const errMsg = await window.rovot.getDaemonError();
+    if (errMsg) {
+      const detail = document.getElementById("backend-error-detail");
+      if (detail) detail.textContent = errMsg.slice(-500);
+    }
+  } catch (_) {}
+
   return false;
 }
 
@@ -264,7 +276,7 @@ async function finishOnboarding() {
     const url = found ? found.getAttribute("data-url") : "http://localhost:1234/v1";
     await api("/config", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
       body: JSON.stringify({ path: "model.base_url", value: url }),
     });
   } else {
@@ -273,14 +285,14 @@ async function finishOnboarding() {
     if (apiUrl) {
       await api("/config", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
         body: JSON.stringify({ path: "model.base_url", value: apiUrl }),
       });
     }
     if (apiKey) {
       await api("/secrets", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
         body: JSON.stringify({ key: "model.api_key", value: apiKey }),
       });
     }
@@ -290,18 +302,18 @@ async function finishOnboarding() {
   const emailEnabled = document.getElementById("onboard-email").checked;
   await api("/config", {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
     body: JSON.stringify({ path: "connectors.filesystem_enabled", value: fsEnabled }),
   });
   await api("/config", {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
     body: JSON.stringify({ path: "connectors.email.enabled", value: emailEnabled }),
   });
 
   await api("/config", {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
     body: JSON.stringify({ path: "onboarded", value: true }),
   });
 
@@ -375,7 +387,7 @@ async function refreshApprovals() {
       const decision = btn.getAttribute("data-decision");
       await api(`/approvals/${id}/resolve`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
         body: JSON.stringify({ decision }),
       });
       addTimelineEvent("approval_resolved", `${decision}: ${id.slice(0, 8)}`);
@@ -383,7 +395,7 @@ async function refreshApprovals() {
       if (currentSessionId) {
         const r2 = await api("/chat/continue", {
           method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
           body: JSON.stringify({ session_id: currentSessionId, approval_id: id }),
         });
         const d2 = await r2.json();
@@ -406,7 +418,7 @@ async function sendMessage() {
   try {
     const r = await api("/chat", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
       body: JSON.stringify({ message: msg, session_id: currentSessionId }),
     });
     const data = await r.json();
@@ -451,7 +463,7 @@ document.getElementById("new-chat").addEventListener("click", () => {
 // ── WebSocket ──
 
 function connectWs() {
-  ws = new WebSocket(`ws://127.0.0.1:18789/ws?token=${encodeURIComponent(token)}`);
+  ws = new WebSocket(`ws://127.0.0.1:18789/ws?token=${encodeURIComponent(getToken())}`);
   ws.onopen = () => (statusEl.textContent = "connected");
   ws.onclose = () => {
     statusEl.textContent = "disconnected";
@@ -500,7 +512,7 @@ recBtn.onclick = async () => {
       try {
         const r = await fetch(baseUrl + "/voice/transcribe", {
           method: "POST",
-          headers: { Authorization: `Bearer ${token}` },
+          headers: { Authorization: `Bearer ${getToken()}` },
           body: fd,
         });
         if (r.ok) {
@@ -564,7 +576,7 @@ async function loadModelsView() {
           document.getElementById("model-base-url").value = s.url;
           await api("/config", {
             method: "POST",
-            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
             body: JSON.stringify({ path: "model.base_url", value: s.url }),
           });
           await refreshConfig();
@@ -584,7 +596,7 @@ async function loadModelsView() {
             document.getElementById("model-name").value = select.value;
             await api("/config", {
               method: "POST",
-              headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
               body: JSON.stringify({ path: "model.model", value: select.value }),
             });
             await refreshConfig();
@@ -600,12 +612,12 @@ async function loadModelsView() {
             document.getElementById("model-base-url").value = s.url;
             await api("/config", {
               method: "POST",
-              headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
               body: JSON.stringify({ path: "model.base_url", value: s.url }),
             });
             await api("/config", {
               method: "POST",
-              headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
               body: JSON.stringify({ path: "model.model", value: mName }),
             });
             await refreshConfig();
@@ -631,14 +643,14 @@ document.getElementById("save-model-config").addEventListener("click", async () 
   if (url) {
     await api("/config", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
       body: JSON.stringify({ path: "model.base_url", value: url }),
     });
   }
   if (model) {
     await api("/config", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
       body: JSON.stringify({ path: "model.model", value: model }),
     });
   }
@@ -701,7 +713,7 @@ async function loadConnectorsView() {
       cb.addEventListener("change", async () => {
         await api("/config", {
           method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
           body: JSON.stringify({ path: cn.configPath, value: cb.checked }),
         });
         await refreshConfig();
@@ -742,7 +754,7 @@ async function loadSecurityView() {
 
   document.getElementById("sec-sandbox").textContent =
     cachedConfig?.security_mode || "workspace";
-  document.getElementById("sec-token").textContent = token
+  document.getElementById("sec-token").textContent = getToken()
     ? "Token file present and loaded"
     : "No token file found";
 
@@ -760,7 +772,7 @@ async function loadSecurityView() {
   keychainToggle.onchange = async () => {
     await api("/config", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
       body: JSON.stringify({ path: "use_keychain", value: keychainToggle.checked }),
     });
     await loadSecurityView();

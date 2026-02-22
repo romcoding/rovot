@@ -1,4 +1,9 @@
 # -*- mode: python ; coding: utf-8 -*-
+from PyInstaller.utils.hooks import collect_submodules
+
+hiddenimports = ['uvicorn.logging', 'uvicorn.loops.auto', 'uvicorn.protocols.http.auto', 'uvicorn.protocols.http.h11_impl', 'uvicorn.protocols.websockets.auto', 'uvicorn.protocols.websockets.wsproto_impl', 'uvicorn.lifespan.on', 'multipart']
+hiddenimports += collect_submodules('pydantic')
+hiddenimports += collect_submodules('keyring')
 
 
 a = Analysis(
@@ -6,7 +11,7 @@ a = Analysis(
     pathex=['/Users/romanhess/Coding/2026/rovot/src'],
     binaries=[],
     datas=[],
-    hiddenimports=[],
+    hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

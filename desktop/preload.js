@@ -1,4 +1,4 @@
-const { contextBridge } = require("electron");
+const { contextBridge, ipcRenderer } = require("electron");
 const os = require("os");
 const path = require("path");
 const fs = require("fs");
@@ -16,4 +16,5 @@ contextBridge.exposeInMainWorld("rovot", {
     }
   },
   baseUrl: () => "http://127.0.0.1:18789",
+  getDaemonError: () => ipcRenderer.invoke("get-daemon-error"),
 });

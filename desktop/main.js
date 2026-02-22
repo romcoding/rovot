@@ -1,10 +1,12 @@
-const { app, BrowserWindow, shell } = require("electron");
+const { app, BrowserWindow, shell, ipcMain } = require("electron");
 const path = require("path");
 const fs = require("fs");
-const { spawn } = require("child_process");
+const os = require("os");
+const { spawn, spawnSync } = require("child_process");
 const http = require("http");
 
 let daemon = null;
+let daemonError = "";
 
 function waitForHealth(port, attempts = 40) {
   return new Promise((resolve, reject) => {
@@ -29,10 +31,26 @@ function waitForHealth(port, attempts = 40) {
 function resolveDaemonBinary() {
   if (app.isPackaged) {
     const ext = process.platform === "win32" ? ".exe" : "";
-    const bundled = path.join(process.resourcesPath, "backend-bin", `rovot-daemon${ext}`);
+    const bundled = path.join(
+      process.resourcesPath,
+      "backend-bin",
+      `rovot-daemon${ext}`
+    );
     if (fs.existsSync(bundled)) return bundled;
   }
   return process.platform === "win32" ? "rovot.exe" : "rovot";
+}
+
+function prepareBinary(bin) {
+  if (process.platform === "darwin") {
+    const xattr = spawnSync("xattr", ["-cr", bin]);
+    console.log("xattr -cr exit:", xattr.status);
+  }
+  try {
+    fs.chmodSync(bin, 0o755);
+  } catch (e) {
+    console.warn("chmod failed (read-only FS?):", e.message);
+  }
 }
 
 async function startDaemon() {
@@ -46,15 +64,28 @@ async function startDaemon() {
   const bin = resolveDaemonBinary();
   console.log("Starting daemon:", bin);
 
+  prepareBinary(bin);
+
   daemon = spawn(bin, ["start", "--host", "127.0.0.1", "--port", "18789"], {
-    stdio: ["ignore", "ignore", "pipe"],
+    stdio: ["ignore", "pipe", "pipe"],
+    cwd: os.homedir(),
   });
-  daemon.stderr.on("data", (d) => console.error("daemon:", d.toString()));
+
+  daemon.stdout.on("data", (d) => console.log("daemon stdout:", d.toString()));
+  daemon.stderr.on("data", (d) => {
+    const msg = d.toString();
+    console.error("daemon stderr:", msg);
+    daemonError += msg;
+  });
   daemon.on("error", (err) => {
     console.error("Failed to spawn daemon:", err.message);
+    daemonError += `Spawn error: ${err.message}\n`;
   });
   daemon.on("exit", (code, signal) => {
     console.error("Daemon exited:", { code, signal });
+    if (code !== 0 && code !== null) {
+      daemonError += `Daemon exited with code ${code}\n`;
+    }
   });
 
   await waitForHealth(port);
@@ -98,11 +129,14 @@ function initAutoUpdater() {
   } catch (_) {}
 }
 
+ipcMain.handle("get-daemon-error", () => daemonError);
+
 app.whenReady().then(async () => {
   try {
     await startDaemon();
   } catch (err) {
     console.error("Daemon startup failed:", err.message);
+    daemonError += `Startup failed: ${err.message}\n`;
   }
   createWindow();
   initAutoUpdater();
