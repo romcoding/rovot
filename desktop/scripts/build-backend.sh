@@ -5,6 +5,18 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 OUT="$ROOT/desktop/backend-bin"
 
 ARCH="${1:-}"
+PYTHON_BIN="${PYTHON_BIN:-}"
+
+if [[ -z "$PYTHON_BIN" ]]; then
+  if command -v python >/dev/null 2>&1; then
+    PYTHON_BIN="python"
+  elif command -v python3 >/dev/null 2>&1; then
+    PYTHON_BIN="python3"
+  else
+    echo "Error: python/python3 not found in PATH."
+    exit 1
+  fi
+fi
 
 rm -rf "$OUT"
 mkdir -p "$OUT"
@@ -31,7 +43,7 @@ if [[ "$(uname)" == "Darwin" && -n "$ARCH" ]]; then
 fi
 
 cd "$ROOT"
-python -m PyInstaller "${PYINSTALLER_ARGS[@]}"
+"$PYTHON_BIN" -m PyInstaller "${PYINSTALLER_ARGS[@]}"
 
 if [[ "$(uname)" == "Darwin" ]]; then
   cp "$ROOT/dist/rovot-daemon" "$OUT/rovot-daemon"

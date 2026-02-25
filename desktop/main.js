@@ -41,6 +41,37 @@ function resolveDaemonBinary() {
   return process.platform === "win32" ? "rovot.exe" : "rovot";
 }
 
+function validatePackagedBinary(bin) {
+  if (!app.isPackaged) return;
+
+  const remediation =
+    "Rebuild the app so backend-bin/rovot-daemon is bundled (run npm run build:backend:mac before npm run dist:mac).";
+
+  if (!fs.existsSync(bin)) {
+    const msg = `Bundled backend binary not found at: ${bin}\n${remediation}`;
+    daemonError += `${msg}\n`;
+    throw new Error(msg);
+  }
+
+  try {
+    fs.accessSync(bin, fs.constants.R_OK);
+  } catch (err) {
+    const msg = `Bundled backend binary is not readable: ${bin}\n${remediation}\nDetails: ${err.message}`;
+    daemonError += `${msg}\n`;
+    throw new Error(msg);
+  }
+
+  if (process.platform !== "win32") {
+    try {
+      fs.accessSync(bin, fs.constants.X_OK);
+    } catch (err) {
+      const msg = `Bundled backend binary is not executable: ${bin}\n${remediation}\nDetails: ${err.message}`;
+      daemonError += `${msg}\n`;
+      throw new Error(msg);
+    }
+  }
+}
+
 function prepareBinary(bin) {
   if (process.platform === "darwin") {
     const xattr = spawnSync("xattr", ["-cr", bin]);
@@ -64,6 +95,7 @@ async function startDaemon() {
   const bin = resolveDaemonBinary();
   console.log("Starting daemon:", bin);
 
+  validatePackagedBinary(bin);
   prepareBinary(bin);
 
   daemon = spawn(bin, ["start", "--host", "127.0.0.1", "--port", "18789"], {
@@ -78,8 +110,9 @@ async function startDaemon() {
     daemonError += msg;
   });
   daemon.on("error", (err) => {
-    console.error("Failed to spawn daemon:", err.message);
-    daemonError += `Spawn error: ${err.message}\n`;
+    const msg = `Failed to spawn daemon (${bin}): ${err.message}`;
+    console.error(msg);
+    daemonError += `${msg}\n`;
   });
   daemon.on("exit", (code, signal) => {
     console.error("Daemon exited:", { code, signal });

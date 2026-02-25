@@ -150,7 +150,20 @@ cd desktop
 npm run dist:mac
 ```
 
-The DMG includes a custom background, app icon, and Applications symlink. Output goes to `desktop/dist/`.
+`dist:mac` now builds the backend daemon binary first for the current macOS CPU architecture (Apple Silicon vs Intel), then packages the app.
+
+The DMG includes a custom background, app icon, Applications symlink, and bundled backend daemon binary in app resources. Output goes to `desktop/dist/`.
+
+If the app opens and remains on **Connecting to backend...**, verify the packaged app contains:
+
+- `Rovot.app/Contents/Resources/backend-bin/rovot-daemon`
+
+If that file is missing, rebuild from `desktop/`:
+
+```bash
+npm run build:backend:mac
+npm run dist:mac
+```
 
 ### Build the EXE installer (Windows)
 

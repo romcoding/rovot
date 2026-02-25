@@ -143,15 +143,29 @@ async function waitForBackend(maxAttempts = 15) {
   backendOverlay.classList.remove("hidden");
   backendConnecting.classList.remove("hidden");
   backendError.classList.add("hidden");
+  let lastHealthError = "";
+
+  const fetchHealthWithTimeout = async (timeoutMs = 1500) => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await api("/health", { signal: controller.signal });
+    } finally {
+      clearTimeout(timeout);
+    }
+  };
 
   for (let i = 0; i < maxAttempts; i++) {
     try {
-      const r = await api("/health");
+      const r = await fetchHealthWithTimeout();
       if (r.ok) {
         backendOverlay.classList.add("hidden");
         return true;
       }
-    } catch (_) {}
+      lastHealthError = `Health endpoint returned status ${r.status}`;
+    } catch (err) {
+      lastHealthError = err?.name === "AbortError" ? "Health request timed out." : (err?.message || "Unknown health check failure.");
+    }
     await new Promise((resolve) => setTimeout(resolve, 2000));
   }
 
@@ -160,11 +174,19 @@ async function waitForBackend(maxAttempts = 15) {
 
   try {
     const errMsg = await window.rovot.getDaemonError();
-    if (errMsg) {
-      const detail = document.getElementById("backend-error-detail");
-      if (detail) detail.textContent = errMsg.slice(-500);
+    const detail = document.getElementById("backend-error-detail");
+    if (detail) {
+      const details = [];
+      if (lastHealthError) details.push(`Last health check error: ${lastHealthError}`);
+      if (errMsg) details.push(errMsg.slice(-500));
+      detail.textContent = details.join("\n\n");
     }
-  } catch (_) {}
+  } catch (err) {
+    const detail = document.getElementById("backend-error-detail");
+    if (detail && lastHealthError) {
+      detail.textContent = `Last health check error: ${lastHealthError}\n\nFailed to read daemon logs: ${err?.message || "unknown error"}`;
+    }
+  }
 
   return false;
 }

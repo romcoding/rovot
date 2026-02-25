@@ -5,7 +5,8 @@
   "main": "main.js",
   "scripts": {
     "dev": "electron .",
-    "dist:mac": "electron-builder -m",
+    "build:backend:mac": "bash -c 'if [ \"$(uname -m)\" = \"arm64\" ]; then npm run build:backend:arm64; else npm run build:backend:x64; fi'",
+    "dist:mac": "npm run build:backend:mac && electron-builder -m",
     "dist:win": "electron-builder -w",
     "dist": "electron-builder",
     "build:backend": "bash scripts/build-backend.sh",
