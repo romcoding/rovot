@@ -8,7 +8,9 @@ ARCH="${1:-}"
 PYTHON_BIN="${PYTHON_BIN:-}"
 
 if [[ -z "$PYTHON_BIN" ]]; then
-  if command -v python >/dev/null 2>&1; then
+  if [[ -x "$ROOT/.venv/bin/python" ]]; then
+    PYTHON_BIN="$ROOT/.venv/bin/python"
+  elif command -v python >/dev/null 2>&1; then
     PYTHON_BIN="python"
   elif command -v python3 >/dev/null 2>&1; then
     PYTHON_BIN="python3"
@@ -43,6 +45,15 @@ if [[ "$(uname)" == "Darwin" && -n "$ARCH" ]]; then
 fi
 
 cd "$ROOT"
+if ! "$PYTHON_BIN" -m PyInstaller --version >/dev/null 2>&1; then
+  echo "Error: PyInstaller is not installed for interpreter: $PYTHON_BIN"
+  echo "Install packaging deps in project venv:"
+  echo "  python3 -m venv .venv"
+  echo "  source .venv/bin/activate"
+  echo "  python -m pip install -e '.[packaging]'"
+  exit 1
+fi
+
 "$PYTHON_BIN" -m PyInstaller "${PYINSTALLER_ARGS[@]}"
 
 if [[ "$(uname)" == "Darwin" ]]; then
