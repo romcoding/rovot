@@ -1,3 +1,9 @@
+if (!window.rovot || typeof window.rovot.baseUrl !== "function") {
+  throw new Error(
+    "Preload bridge unavailable (window.rovot missing). Check Electron preload and sandbox settings."
+  );
+}
+
 const baseUrl = window.rovot.baseUrl();
 
 // DOM refs
@@ -20,6 +26,8 @@ let ws = null;
 let cachedConfig = null;
 let isSending = false;
 let timelineCollapsed = false;
+let wsRetryCount = 0;
+const WS_MAX_RETRIES = 5;
 
 // ── Helpers ──
 
@@ -31,6 +39,27 @@ async function api(path, opts = {}) {
   const headers = opts.headers || {};
   headers["Authorization"] = `Bearer ${getToken()}`;
   return fetch(baseUrl + path, { ...opts, headers });
+}
+
+async function readJsonOrThrow(response) {
+  const text = await response.text();
+  if (!response.ok) {
+    let detail = text || `HTTP ${response.status}`;
+    try {
+      const parsed = text ? JSON.parse(text) : null;
+      if (parsed && typeof parsed === "object") {
+        detail = parsed.detail || parsed.message || detail;
+      }
+    } catch (_) {}
+    throw new Error(`Request failed (${response.status}): ${detail}`);
+  }
+
+  if (!text) return {};
+  try {
+    return JSON.parse(text);
+  } catch (err) {
+    throw new Error(`Invalid JSON response: ${err.message}`);
+  }
 }
 
 function escapeHtml(str) {
@@ -368,7 +397,7 @@ function updateIndicators() {
 
 async function refreshApprovals() {
   const r = await api("/approvals/pending");
-  const data = await r.json();
+  const data = await readJsonOrThrow(r);
   approvalsEl.innerHTML = "";
   (data.pending || []).forEach((a) => {
     const card = document.createElement("div");
@@ -420,7 +449,7 @@ async function refreshApprovals() {
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
           body: JSON.stringify({ session_id: currentSessionId, approval_id: id }),
         });
-        const d2 = await r2.json();
+        const d2 = await readJsonOrThrow(r2);
         addMsg("assistant", d2.reply);
       }
     };
@@ -443,7 +472,7 @@ async function sendMessage() {
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
       body: JSON.stringify({ message: msg, session_id: currentSessionId }),
     });
-    const data = await r.json();
+    const data = await readJsonOrThrow(r);
     currentSessionId = data.session_id;
     addMsg("assistant", data.reply);
     addTimelineEvent("chat", "Reply received");
@@ -485,11 +514,23 @@ document.getElementById("new-chat").addEventListener("click", () => {
 // ── WebSocket ──
 
 function connectWs() {
+  if (wsRetryCount >= WS_MAX_RETRIES) {
+    statusEl.textContent = "connected (ws disabled)";
+    addTimelineEvent("error", "Realtime updates unavailable (/ws not reachable).");
+    return;
+  }
+
   ws = new WebSocket(`ws://127.0.0.1:18789/ws?token=${encodeURIComponent(getToken())}`);
-  ws.onopen = () => (statusEl.textContent = "connected");
+  ws.onopen = () => {
+    wsRetryCount = 0;
+    statusEl.textContent = "connected";
+  };
+  ws.onerror = () => {
+    wsRetryCount += 1;
+  };
   ws.onclose = () => {
     statusEl.textContent = "disconnected";
-    setTimeout(connectWs, 3000);
+    setTimeout(connectWs, Math.min(3000 * (wsRetryCount + 1), 15000));
   };
   ws.onmessage = (ev) => {
     try {

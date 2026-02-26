@@ -133,6 +133,9 @@ function createWindow() {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      // Preload reads local token file via Node built-ins.
+      // Keep renderer isolated, but disable renderer sandbox for preload access.
+      sandbox: false,
     },
   });
   win.loadFile(path.join(__dirname, "renderer", "index.html"));
