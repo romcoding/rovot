@@ -16,6 +16,12 @@ class SecurityMode(str, Enum):
     ELEVATED = "elevated"
 
 
+class ModelProviderMode(str, Enum):
+    LOCAL = "local"
+    CLOUD = "cloud"
+    AUTO = "auto"
+
+
 class Settings(BaseSettings):
     model_config = {"env_prefix": "ROVOT_", "env_file": ".env", "env_file_encoding": "utf-8"}
 
@@ -29,6 +35,11 @@ class ModelConfig(BaseModel):
     base_url: str = "http://localhost:1234/v1"
     model: str = ""
     api_key_secret: str = "model.api_key"
+    cloud_base_url: str = "https://api.openai.com/v1"
+    cloud_model: str = "gpt-4o-mini"
+    cloud_api_key_secret: str = "openai.api_key"
+    provider_mode: ModelProviderMode = ModelProviderMode.LOCAL
+    fallback_to_cloud: bool = False
 
 
 class EmailConnectorConfig(BaseModel):
@@ -44,11 +55,18 @@ class EmailConnectorConfig(BaseModel):
     allow_from: list[str] = Field(default_factory=list)
 
 
+class MessagingConnectorConfig(BaseModel):
+    enabled: bool = False
+    provider: str = "none"  # none|whatsapp_twilio|signal_cli
+    webhook_verify_secret: str = ""
+    twilio_auth_token_secret: str = "twilio.auth_token"
+
+
 class ConnectorsConfig(BaseModel):
     filesystem_enabled: bool = True
     email: EmailConnectorConfig = Field(default_factory=EmailConnectorConfig)
     calendar_enabled: bool = False
-    messaging_enabled: bool = False
+    messaging: MessagingConnectorConfig = Field(default_factory=MessagingConnectorConfig)
 
 
 class VoiceConfig(BaseModel):

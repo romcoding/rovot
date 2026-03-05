@@ -13,7 +13,7 @@ from rovot.policy.engine import PolicyEngine
 from rovot.secrets import SecretsStore
 from rovot.server.deps import AppState, ensure_auth_token
 from rovot.server.ws import WebSocketHub
-from rovot.server.routes import approvals, audit, chat, config, health, models, voice
+from rovot.server.routes import approvals, audit, channels, chat, config, health, models, voice
 
 logger = logging.getLogger("rovot.server")
 
@@ -46,11 +46,15 @@ def create_app() -> FastAPI:
     audit_logger = AuditLogger(path=settings.data_dir / "audit.log")
 
     app = FastAPI(title="Rovot Control Plane", version=__version__, docs_url="/docs")
+    cors_origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
+    if not cors_origins:
+        cors_origins = ["http://localhost", "http://127.0.0.1"] if settings.cloud_mode else ["*"]
+
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_origins=cors_origins,
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "X-Twilio-Signature", "X-Rovot-Channel-Secret"],
     )
     app.state.rovot_state = AppState(
         settings=settings,
@@ -69,6 +73,7 @@ def create_app() -> FastAPI:
     app.include_router(voice.router)
     app.include_router(audit.router)
     app.include_router(models.router)
+    app.include_router(channels.router)
 
     @app.websocket("/ws")
     async def ws_endpoint(websocket: WebSocket, token: str = ""):

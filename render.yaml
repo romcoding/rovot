@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: rovot
+    runtime: docker
+    plan: starter
+    autoDeploy: true
+    envVars:
+      - key: ROVOT_CLOUD_MODE
+        value: "true"
+      - key: ROVOT_HOST
+        value: 0.0.0.0
+      - key: ROVOT_PORT
+        value: "18789"
