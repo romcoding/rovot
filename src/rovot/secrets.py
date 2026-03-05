@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
+from dataclasses import field
 from pathlib import Path
 
 import keyring
@@ -13,6 +14,7 @@ class SecretsStore:
     service: str
     fallback_path: Path
     use_keychain: bool = True
+    _cache: dict[str, str] = field(default_factory=dict, init=False, repr=False)
 
     def _fallback_load(self) -> dict[str, str]:
         if not self.fallback_path.exists():
@@ -31,16 +33,23 @@ class SecretsStore:
             pass
 
     def get(self, key: str) -> str | None:
+        if key in self._cache:
+            return self._cache[key]
         if self.use_keychain:
             try:
                 v = keyring.get_password(self.service, key)
                 if v:
+                    self._cache[key] = v
                     return v
             except Exception:
                 pass
-        return self._fallback_load().get(key)
+        v = self._fallback_load().get(key)
+        if v:
+            self._cache[key] = v
+        return v
 
     def set(self, key: str, value: str) -> None:
+        self._cache[key] = value
         if self.use_keychain:
             try:
                 keyring.set_password(self.service, key, value)
@@ -52,6 +61,7 @@ class SecretsStore:
         self._fallback_save(d)
 
     def delete(self, key: str) -> None:
+        self._cache.pop(key, None)
         if self.use_keychain:
             try:
                 keyring.delete_password(self.service, key)
