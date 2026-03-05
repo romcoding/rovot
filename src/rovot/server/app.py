@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from rovot import __version__
 from rovot.audit import AuditLogger
@@ -74,6 +75,17 @@ def create_app() -> FastAPI:
     app.include_router(audit.router)
     app.include_router(models.router)
     app.include_router(channels.router)
+
+    @app.exception_handler(Exception)
+    async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+        logger.exception("Unhandled server error on %s %s", request.method, request.url.path)
+        return JSONResponse(
+            status_code=500,
+            content={
+                "detail": "Internal Server Error",
+                "error_type": exc.__class__.__name__,
+            },
+        )
 
     @app.websocket("/ws")
     async def ws_endpoint(websocket: WebSocket, token: str = ""):
