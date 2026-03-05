@@ -47,20 +47,3 @@ def test_set_and_delete_update_cache(monkeypatch, tmp_path):
 
     assert state["set_calls"] == 1
     assert state["delete_calls"] == 1
-
-
-def test_keychain_available_is_cached(monkeypatch, tmp_path):
-    calls = {"count": 0}
-
-    def fake_get_password(service, key):
-        calls["count"] += 1
-        assert key == "__probe__"
-        return None
-
-    monkeypatch.setattr("keyring.get_password", fake_get_password)
-
-    store = SecretsStore(service="rovot", fallback_path=tmp_path / "secrets.json", use_keychain=True)
-
-    assert store.keychain_available is True
-    assert store.keychain_available is True
-    assert calls["count"] == 1

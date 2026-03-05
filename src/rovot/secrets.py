@@ -15,7 +15,6 @@ class SecretsStore:
     fallback_path: Path
     use_keychain: bool = True
     _cache: dict[str, str] = field(default_factory=dict, init=False, repr=False)
-    _keychain_available_cache: bool | None = field(default=None, init=False, repr=False)
 
     def _fallback_load(self) -> dict[str, str]:
         if not self.fallback_path.exists():
