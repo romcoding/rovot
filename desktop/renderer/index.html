@@ -220,14 +220,41 @@
             <div class="view-inner">
               <h2>Models</h2>
               <div class="settings-group">
-                <h3>Active configuration</h3>
+                <h3>Provider routing</h3>
+                <label>Provider mode
+                  <select id="provider-mode">
+                    <option value="local">Local only (LM Studio / Ollama / vLLM)</option>
+                    <option value="cloud">Cloud API only</option>
+                    <option value="auto">Auto (try local, fallback to cloud)</option>
+                  </select>
+                </label>
+                <label class="toggle-row connector-toggle sec-toggle">
+                  <input type="checkbox" id="provider-fallback" />
+                  <div>
+                    <strong>Fallback to cloud when local fails</strong>
+                    <span>Used when provider mode is auto</span>
+                  </div>
+                </label>
+                <label>Cloud base URL
+                  <input id="cloud-base-url" type="text" placeholder="https://api.openai.com/v1" />
+                </label>
+                <label>Cloud model
+                  <input id="cloud-model-name" type="text" placeholder="gpt-4o-mini" />
+                </label>
+                <label>Cloud API key (optional, stored in secrets)
+                  <input id="cloud-api-key" type="password" placeholder="sk-..." />
+                </label>
+                <button id="save-provider-config" class="btn secondary">Save provider routing</button>
+              </div>
+              <div class="settings-group">
+                <h3>Local provider configuration</h3>
                 <label>Base URL
                   <input id="model-base-url" type="text" placeholder="http://localhost:1234/v1" />
                 </label>
                 <label>Model name
                   <input id="model-name" type="text" placeholder="(auto-detected or manual)" />
                 </label>
-                <button id="save-model-config" class="btn primary">Save</button>
+                <button id="save-model-config" class="btn primary">Save local provider</button>
               </div>
               <div class="settings-group">
                 <h3>Detected servers</h3>

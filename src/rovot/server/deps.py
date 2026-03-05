@@ -24,6 +24,7 @@ class AppState:
     settings: Settings
     config_store: ConfigStore
     secrets: SecretsStore
+    auth_token: str
     approvals: ApprovalManager
     policy: PolicyEngine
     ws: WebSocketHub
@@ -41,14 +42,19 @@ def _token_path(settings: Settings) -> Path:
 def ensure_auth_token(settings: Settings, secrets_store: SecretsStore) -> str:
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     p = _token_path(settings)
-    tok = secrets_store.get("auth.token")
-    if tok:
-        return tok
     if p.exists():
         tok = p.read_text("utf-8").strip()
         if tok:
             secrets_store.set("auth.token", tok)
             return tok
+    tok = secrets_store.get("auth.token")
+    if tok:
+        p.write_text(tok, "utf-8")
+        try:
+            os.chmod(p, 0o600)
+        except Exception:
+            pass
+        return tok
     tok = secrets.token_urlsafe(32)
     p.write_text(tok, "utf-8")
     try:
@@ -65,7 +71,7 @@ def get_auth_ctx(
 ) -> AuthContext:
     if creds is None or creds.scheme.lower() != "bearer":
         raise HTTPException(status_code=401, detail="Missing bearer token")
-    token_expected = state.secrets.get("auth.token") or ""
+    token_expected = state.auth_token
     if not token_expected or creds.credentials != token_expected:
         raise HTTPException(status_code=403, detail="Invalid token")
     return AuthContext(token=creds.credentials, scopes=list(DEFAULT_ADMIN_SCOPES))

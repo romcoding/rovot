@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from rovot.agent.context import ContextBuilder, Message
@@ -90,7 +90,13 @@ async def chat(
     history.append(Message(role="user", content=req.message))
     session.append(Message(role="user", content=req.message))
     agent = _build_agent(state)
-    resp = await agent.run(auth=auth, session_id=session.id, history=history)
+    try:
+        resp = await agent.run(auth=auth, session_id=session.id, history=history)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Model provider request failed: {exc}",
+        ) from exc
     session.append(Message(role="assistant", content=resp.reply))
     if state.audit:
         state.audit.log(
@@ -141,7 +147,13 @@ async def chat_continue(
         session.append(Message(role="tool", content=str(result), tool_call_id=a.tool_call_id))
         state.approvals.consume(a.id)
 
-    resp = await agent.run(auth=auth, session_id=session.id, history=history)
+    try:
+        resp = await agent.run(auth=auth, session_id=session.id, history=history)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Model provider request failed: {exc}",
+        ) from exc
     session.append(Message(role="assistant", content=resp.reply))
     await state.ws.broadcast(
         "chat.reply",

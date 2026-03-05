@@ -37,7 +37,7 @@ async def update_config(
         return {"error": "Missing scope operator.write"}
     state.config_store.update_path(req.path, req.value)
     if req.path == "use_keychain":
-        state.secrets.use_keychain = bool(req.value)
+        state.secrets.set_use_keychain(bool(req.value))
     return {"ok": True}
 
 
@@ -50,4 +50,6 @@ async def set_secret(
     if OPERATOR_ADMIN not in ctx.scopes:
         return {"error": "Missing scope operator.admin"}
     state.secrets.set(req.key, req.value)
+    if req.key == "auth.token":
+        state.auth_token = req.value
     return {"ok": True}

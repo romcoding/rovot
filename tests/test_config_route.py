@@ -17,6 +17,7 @@ def test_update_config_applies_use_keychain_to_runtime(tmp_path):
         settings=settings,
         config_store=cfg,
         secrets=secrets,
+        auth_token="t",
         approvals=None,  # type: ignore[arg-type]
         policy=None,  # type: ignore[arg-type]
         ws=None,  # type: ignore[arg-type]

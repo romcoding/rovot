@@ -15,6 +15,11 @@ class SecretsStore:
     fallback_path: Path
     use_keychain: bool = True
     _cache: dict[str, str] = field(default_factory=dict, init=False, repr=False)
+    _keychain_available_cache: bool | None = None
+
+    def set_use_keychain(self, enabled: bool) -> None:
+        self.use_keychain = enabled
+        self._keychain_available_cache = None
 
     def _fallback_load(self) -> dict[str, str]:
         if not self.fallback_path.exists():
@@ -75,13 +80,15 @@ class SecretsStore:
 
     @property
     def keychain_available(self) -> bool:
-        if not self.use_keychain:
-            return False
         if self._keychain_available_cache is not None:
             return self._keychain_available_cache
+        if not self.use_keychain:
+            self._keychain_available_cache = False
+            return False
         try:
-            keyring.get_password(self.service, "__probe__")
+            keyring.get_keyring()
             self._keychain_available_cache = True
+            return True
         except Exception:
             self._keychain_available_cache = False
-        return self._keychain_available_cache
+            return False

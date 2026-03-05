@@ -33,7 +33,7 @@ def create_app() -> FastAPI:
         )
 
     secrets = SecretsStore(service="rovot", fallback_path=settings.data_dir / "secrets.json")
-    ensure_auth_token(settings, secrets)
+    auth_token = ensure_auth_token(settings, secrets)
 
     cfg_store = ConfigStore(path=settings.data_dir / "config.json")
     cfg_store.load()
@@ -61,6 +61,7 @@ def create_app() -> FastAPI:
         settings=settings,
         config_store=cfg_store,
         secrets=secrets,
+        auth_token=auth_token,
         approvals=approvals_store,
         policy=policy,
         ws=ws,
@@ -89,7 +90,7 @@ def create_app() -> FastAPI:
 
     @app.websocket("/ws")
     async def ws_endpoint(websocket: WebSocket, token: str = ""):
-        ctx_token = secrets.get("auth.token") or ""
+        ctx_token = auth_token
         if not token or token != ctx_token:
             await websocket.close(code=4401)
             return

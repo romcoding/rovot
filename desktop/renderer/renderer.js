@@ -328,23 +328,33 @@ async function finishOnboarding() {
     await api("/config", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+      body: JSON.stringify({ path: "model.provider_mode", value: "local" }),
+    });
+    await api("/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
       body: JSON.stringify({ path: "model.base_url", value: url }),
     });
   } else {
     const apiUrl = document.getElementById("onboard-api-url").value.trim();
     const apiKey = document.getElementById("onboard-api-key").value.trim();
+    await api("/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+      body: JSON.stringify({ path: "model.provider_mode", value: "cloud" }),
+    });
     if (apiUrl) {
       await api("/config", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
-        body: JSON.stringify({ path: "model.base_url", value: apiUrl }),
+        body: JSON.stringify({ path: "model.cloud_base_url", value: apiUrl }),
       });
     }
     if (apiKey) {
       await api("/secrets", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
-        body: JSON.stringify({ key: "model.api_key", value: apiKey }),
+        body: JSON.stringify({ key: "openai.api_key", value: apiKey }),
       });
     }
   }
@@ -384,11 +394,20 @@ async function refreshConfig() {
 
 function updateIndicators() {
   if (!cachedConfig) return;
-  const modelBaseUrl = cachedConfig.model?.base_url || "";
-  const modelName = cachedConfig.model?.model || "";
-  modelIndicator.textContent = modelName || modelBaseUrl.replace(/https?:\/\//, "").split("/")[0] || "--";
+  const providerMode = cachedConfig.model?.provider_mode || "local";
+  const localBaseUrl = cachedConfig.model?.base_url || "";
+  const cloudBaseUrl = cachedConfig.model?.cloud_base_url || "";
+  const modelName =
+    providerMode === "cloud"
+      ? cachedConfig.model?.cloud_model || ""
+      : cachedConfig.model?.model || "";
+  const activeBaseUrl = providerMode === "cloud" ? cloudBaseUrl : localBaseUrl;
+  modelIndicator.textContent =
+    modelName || activeBaseUrl.replace(/https?:\/\//, "").split("/")[0] || "--";
 
-  const isLocal = modelBaseUrl.includes("localhost") || modelBaseUrl.includes("127.0.0.1");
+  const isLocal = providerMode !== "cloud" && (
+    localBaseUrl.includes("localhost") || localBaseUrl.includes("127.0.0.1")
+  );
   privacyIndicator.textContent = isLocal ? "Local" : "Cloud";
   privacyIndicator.className = "indicator " + (isLocal ? "privacy-local" : "privacy-cloud");
 }
@@ -594,6 +613,11 @@ recBtn.onclick = async () => {
 async function loadModelsView() {
   await refreshConfig();
   if (cachedConfig) {
+    document.getElementById("provider-mode").value = cachedConfig.model?.provider_mode || "local";
+    document.getElementById("provider-fallback").checked = cachedConfig.model?.fallback_to_cloud === true;
+    document.getElementById("cloud-base-url").value = cachedConfig.model?.cloud_base_url || "";
+    document.getElementById("cloud-model-name").value = cachedConfig.model?.cloud_model || "";
+    document.getElementById("cloud-api-key").value = "";
     document.getElementById("model-base-url").value = cachedConfig.model?.base_url || "";
     document.getElementById("model-name").value = cachedConfig.model?.model || "";
   }
@@ -640,6 +664,11 @@ async function loadModelsView() {
           await api("/config", {
             method: "POST",
             headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+            body: JSON.stringify({ path: "model.provider_mode", value: "local" }),
+          });
+          await api("/config", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
             body: JSON.stringify({ path: "model.base_url", value: s.url }),
           });
           await refreshConfig();
@@ -676,6 +705,11 @@ async function loadModelsView() {
             await api("/config", {
               method: "POST",
               headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+              body: JSON.stringify({ path: "model.provider_mode", value: "local" }),
+            });
+            await api("/config", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
               body: JSON.stringify({ path: "model.base_url", value: s.url }),
             });
             await api("/config", {
@@ -703,6 +737,11 @@ async function loadModelsView() {
 document.getElementById("save-model-config").addEventListener("click", async () => {
   const url = document.getElementById("model-base-url").value.trim();
   const model = document.getElementById("model-name").value.trim();
+  await api("/config", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+    body: JSON.stringify({ path: "model.provider_mode", value: "local" }),
+  });
   if (url) {
     await api("/config", {
       method: "POST",
@@ -715,6 +754,47 @@ document.getElementById("save-model-config").addEventListener("click", async () 
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
       body: JSON.stringify({ path: "model.model", value: model }),
+    });
+  }
+  await refreshConfig();
+});
+
+document.getElementById("save-provider-config").addEventListener("click", async () => {
+  const mode = document.getElementById("provider-mode").value;
+  const fallback = document.getElementById("provider-fallback").checked;
+  const cloudUrl = document.getElementById("cloud-base-url").value.trim();
+  const cloudModel = document.getElementById("cloud-model-name").value.trim();
+  const cloudApiKey = document.getElementById("cloud-api-key").value.trim();
+
+  await api("/config", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+    body: JSON.stringify({ path: "model.provider_mode", value: mode }),
+  });
+  await api("/config", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+    body: JSON.stringify({ path: "model.fallback_to_cloud", value: fallback }),
+  });
+  if (cloudUrl) {
+    await api("/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+      body: JSON.stringify({ path: "model.cloud_base_url", value: cloudUrl }),
+    });
+  }
+  if (cloudModel) {
+    await api("/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+      body: JSON.stringify({ path: "model.cloud_model", value: cloudModel }),
+    });
+  }
+  if (cloudApiKey) {
+    await api("/secrets", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+      body: JSON.stringify({ key: "openai.api_key", value: cloudApiKey }),
     });
   }
   await refreshConfig();
