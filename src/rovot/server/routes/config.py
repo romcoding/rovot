@@ -36,6 +36,8 @@ async def update_config(
     if OPERATOR_WRITE not in ctx.scopes:
         return {"error": "Missing scope operator.write"}
     state.config_store.update_path(req.path, req.value)
+    if req.path == "use_keychain":
+        state.secrets.use_keychain = bool(req.value)
     return {"ok": True}
 
 

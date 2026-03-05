@@ -77,8 +77,11 @@ class SecretsStore:
     def keychain_available(self) -> bool:
         if not self.use_keychain:
             return False
+        if self._keychain_available_cache is not None:
+            return self._keychain_available_cache
         try:
             keyring.get_password(self.service, "__probe__")
-            return True
+            self._keychain_available_cache = True
         except Exception:
-            return False
+            self._keychain_available_cache = False
+        return self._keychain_available_cache
