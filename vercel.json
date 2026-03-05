@@ -1,0 +1,8 @@
+{
+  "builds": [
+    { "src": "src/rovot/server/app.py", "use": "@vercel/python" }
+  ],
+  "routes": [
+    { "src": "/(.*)", "dest": "src/rovot/server/app.py" }
+  ]
+}

@@ -31,3 +31,21 @@ async def models_available(
             return {"models": models, "base_url": url}
     except Exception as exc:
         return {"models": [], "base_url": url, "error": str(exc)}
+
+
+@router.get("/models/providers")
+async def model_providers(
+    auth: AuthContext = Depends(get_auth_ctx),
+    state: AppState = Depends(get_state),
+) -> dict[str, Any]:
+    cfg = state.config_store.config.model
+    return {
+        "provider_mode": cfg.provider_mode,
+        "local": {"base_url": cfg.base_url, "model": cfg.model},
+        "cloud": {
+            "base_url": cfg.cloud_base_url,
+            "model": cfg.cloud_model,
+            "api_key_configured": bool(state.secrets.get(cfg.cloud_api_key_secret)),
+        },
+        "fallback_to_cloud": cfg.fallback_to_cloud,
+    }

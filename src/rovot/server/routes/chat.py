@@ -16,6 +16,7 @@ from rovot.agent.tools.registry import ToolRegistry
 from rovot.connectors.loader import load_connectors
 from rovot.policy.engine import AuthContext
 from rovot.providers.openai_compat import OpenAICompatProvider
+from rovot.providers.router import ProviderRouter
 from rovot.server.deps import AppState, get_auth_ctx, get_state
 
 router = APIRouter(tags=["chat"])
@@ -42,8 +43,23 @@ def _build_agent(state: AppState) -> AgentLoop:
     cfg = state.config_store.config
     settings = state.settings
     model_key = state.secrets.get(cfg.model.api_key_secret) or ""
-    provider = OpenAICompatProvider(
-        base_url=cfg.model.base_url, api_key=model_key, model=cfg.model.model
+    provider = ProviderRouter(
+        local=OpenAICompatProvider(
+            base_url=cfg.model.base_url,
+            api_key=model_key,
+            model=cfg.model.model,
+        ),
+        cloud=(
+            OpenAICompatProvider(
+                base_url=cfg.model.cloud_base_url,
+                api_key=state.secrets.get(cfg.model.cloud_api_key_secret) or "",
+                model=cfg.model.cloud_model,
+            )
+            if cfg.model.cloud_base_url
+            else None
+        ),
+        mode=cfg.model.provider_mode,
+        fallback_to_cloud=cfg.model.fallback_to_cloud,
     )
     connectors = load_connectors(cfg, workspace=settings.workspace_dir, secrets=state.secrets)
     tools = ToolRegistry(policy=state.policy)

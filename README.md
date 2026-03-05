@@ -208,3 +208,30 @@ Top bar shows: active model indicator, privacy mode (Local/Cloud), connection st
 ## License
 
 MIT
+
+
+## Cloud deployment
+
+Rovot can also run in cloud mode (Render, Railway, Fly, self-hosted Docker).
+
+- Set `ROVOT_CLOUD_MODE=true`
+- Keep `ROVOT_HOST=0.0.0.0` and configure a strong `auth.token` secret.
+- Restrict CORS with `ROVOT_CORS_ORIGINS=https://your-frontend.example`
+- Use provider auto-routing with OpenAI fallback:
+
+```bash
+rovot config set model.provider_mode auto
+rovot config set model.fallback_to_cloud true
+rovot config set model.cloud_base_url https://api.openai.com/v1
+rovot config set model.cloud_model gpt-4o-mini
+rovot secret set openai.api_key "$OPENAI_API_KEY"
+```
+
+### Messaging channels (webhooks)
+
+Rovot supports a hardened incoming webhook endpoint at `POST /channels/incoming`.
+
+- **Twilio WhatsApp**: set `connectors.messaging.provider=whatsapp_twilio`, enable connector, and store `twilio.auth_token` in secrets.
+- **Signal (signal-cli bridge)**: set provider to `signal_cli` and configure `connectors.messaging.webhook_verify_secret`.
+
+Each message is audited and processed through the same policy and approvals engine as desktop chat.
