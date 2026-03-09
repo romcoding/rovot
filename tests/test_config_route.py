@@ -18,6 +18,8 @@ def test_update_config_applies_use_keychain_to_runtime(tmp_path):
         config_store=cfg,
         secrets=secrets,
         auth_token="t",
+        startup_ts=0.0,
+        pid=1,
         approvals=None,  # type: ignore[arg-type]
         policy=None,  # type: ignore[arg-type]
         ws=None,  # type: ignore[arg-type]

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import os
+import time
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,6 +22,8 @@ logger = logging.getLogger("rovot.server")
 
 
 def create_app() -> FastAPI:
+    startup_ts = time.time()
+    pid = os.getpid()
     settings = Settings()
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     settings.workspace_dir.mkdir(parents=True, exist_ok=True)
@@ -62,6 +66,8 @@ def create_app() -> FastAPI:
         config_store=cfg_store,
         secrets=secrets,
         auth_token=auth_token,
+        startup_ts=startup_ts,
+        pid=pid,
         approvals=approvals_store,
         policy=policy,
         ws=ws,

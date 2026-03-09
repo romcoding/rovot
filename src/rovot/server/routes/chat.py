@@ -14,6 +14,7 @@ from rovot.agent.tools.builtin_fs import register_fs_tools
 from rovot.agent.tools.builtin_web import register_web_tools
 from rovot.agent.tools.registry import ToolRegistry
 from rovot.connectors.loader import load_connectors
+from rovot.config import ModelProviderMode
 from rovot.policy.engine import AuthContext
 from rovot.providers.openai_compat import OpenAICompatProvider
 from rovot.providers.router import ProviderRouter
@@ -42,22 +43,30 @@ class ChatResponse(BaseModel):
 def _build_agent(state: AppState) -> AgentLoop:
     cfg = state.config_store.config
     settings = state.settings
-    model_key = state.secrets.get(cfg.model.api_key_secret) or ""
+    model_key = state.secrets.get(cfg.model.api_key_secret, source="chat.local_api_key") or ""
+    need_cloud = cfg.model.provider_mode == ModelProviderMode.CLOUD or (
+        cfg.model.provider_mode == ModelProviderMode.AUTO and cfg.model.fallback_to_cloud
+    )
+    cloud_provider = None
+    if cfg.model.cloud_base_url and need_cloud:
+        cloud_provider = OpenAICompatProvider(
+            base_url=cfg.model.cloud_base_url,
+            api_key=(
+                state.secrets.get(
+                    cfg.model.cloud_api_key_secret,
+                    source="chat.cloud_api_key",
+                )
+                or ""
+            ),
+            model=cfg.model.cloud_model,
+        )
     provider = ProviderRouter(
         local=OpenAICompatProvider(
             base_url=cfg.model.base_url,
             api_key=model_key,
             model=cfg.model.model,
         ),
-        cloud=(
-            OpenAICompatProvider(
-                base_url=cfg.model.cloud_base_url,
-                api_key=state.secrets.get(cfg.model.cloud_api_key_secret) or "",
-                model=cfg.model.cloud_model,
-            )
-            if cfg.model.cloud_base_url
-            else None
-        ),
+        cloud=cloud_provider,
         mode=cfg.model.provider_mode,
         fallback_to_cloud=cfg.model.fallback_to_cloud,
     )

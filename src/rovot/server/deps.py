@@ -25,6 +25,8 @@ class AppState:
     config_store: ConfigStore
     secrets: SecretsStore
     auth_token: str
+    startup_ts: float
+    pid: int
     approvals: ApprovalManager
     policy: PolicyEngine
     ws: WebSocketHub
@@ -45,9 +47,8 @@ def ensure_auth_token(settings: Settings, secrets_store: SecretsStore) -> str:
     if p.exists():
         tok = p.read_text("utf-8").strip()
         if tok:
-            secrets_store.set("auth.token", tok)
             return tok
-    tok = secrets_store.get("auth.token")
+    tok = secrets_store.get("auth.token", source="deps.ensure_auth_token")
     if tok:
         p.write_text(tok, "utf-8")
         try:

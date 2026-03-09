@@ -5,6 +5,7 @@ from typing import Any
 import httpx
 from fastapi import APIRouter, Depends, Query
 
+from rovot.config import ModelProviderMode
 from rovot.policy.engine import AuthContext
 from rovot.server.deps import AppState, get_auth_ctx, get_state
 
@@ -39,13 +40,25 @@ async def model_providers(
     state: AppState = Depends(get_state),
 ) -> dict[str, Any]:
     cfg = state.config_store.config.model
+    needs_cloud_secret_check = cfg.provider_mode == ModelProviderMode.CLOUD or (
+        cfg.provider_mode == ModelProviderMode.AUTO and cfg.fallback_to_cloud
+    )
+    cloud_api_key_configured = False
+    if needs_cloud_secret_check:
+        cloud_api_key_configured = bool(
+            state.secrets.get(
+                cfg.cloud_api_key_secret,
+                source="models.providers.cloud_api_key",
+                allow_keychain=False,
+            )
+        )
     return {
         "provider_mode": cfg.provider_mode,
         "local": {"base_url": cfg.base_url, "model": cfg.model},
         "cloud": {
             "base_url": cfg.cloud_base_url,
             "model": cfg.cloud_model,
-            "api_key_configured": bool(state.secrets.get(cfg.cloud_api_key_secret)),
+            "api_key_configured": cloud_api_key_configured,
         },
         "fallback_to_cloud": cfg.fallback_to_cloud,
     }
