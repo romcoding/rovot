@@ -6,6 +6,11 @@ if (!window.rovot || typeof window.rovot.baseUrl !== "function") {
 
 const baseUrl = window.rovot.baseUrl();
 
+// Token is fetched from the main process ONCE at startup (see bottom of file)
+// and cached here.  All API / WebSocket calls use this cached value so the
+// main process never has to re-read the token file after the initial load.
+let cachedToken = "";
+
 // DOM refs
 const statusEl = document.getElementById("connection-status");
 const modelIndicator = document.getElementById("model-indicator");
@@ -32,7 +37,7 @@ const WS_MAX_RETRIES = 5;
 // ── Helpers ──
 
 function getToken() {
-  return window.rovot.readToken();
+  return cachedToken;
 }
 
 async function api(path, opts = {}) {
@@ -971,7 +976,14 @@ document.getElementById("refresh-logs").addEventListener("click", loadLogsView);
 // ── Init ──
 
 setupOnboarding();
-checkOnboarding().then(() => {
-  connectWs();
-  refreshApprovals();
+
+// Fetch the auth token from the main process exactly once, then start the app.
+// Using the IPC-backed cache means the token file is read at most once per
+// Electron launch regardless of how many API calls the renderer makes.
+window.rovot.getToken().then((tok) => {
+  cachedToken = tok;
+  checkOnboarding().then(() => {
+    connectWs();
+    refreshApprovals();
+  });
 });

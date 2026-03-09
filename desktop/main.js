@@ -7,6 +7,16 @@ const http = require("http");
 
 let daemon = null;
 let daemonError = "";
+let cachedToken = null;
+
+function loadCachedToken() {
+  const tokenPath = path.join(os.homedir(), ".rovot", "auth_token.txt");
+  try {
+    cachedToken = fs.readFileSync(tokenPath, "utf-8").trim() || null;
+  } catch (_) {
+    cachedToken = null;
+  }
+}
 
 function waitForHealth(port, attempts = 40) {
   return new Promise((resolve, reject) => {
@@ -129,12 +139,15 @@ function createWindow() {
     width: 1100,
     height: 760,
     titleBarStyle: "hiddenInset",
+    // Position traffic lights so they sit inside the custom topbar (42 px tall).
+    // x=16 matches the topbar's left padding; y=15 vertically centres the 12-px buttons.
+    trafficLightPosition: { x: 16, y: 15 },
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
-      // Preload reads local token file via Node built-ins.
-      // Keep renderer isolated, but disable renderer sandbox for preload access.
+      // Keep renderer isolated (contextIsolation) but allow the preload script
+      // to use Electron's Node built-ins for IPC.
       sandbox: false,
     },
   });
@@ -166,14 +179,18 @@ function initAutoUpdater() {
 }
 
 ipcMain.handle("get-daemon-error", () => daemonError);
+ipcMain.handle("get-token", () => cachedToken ?? "");
 
 app.whenReady().then(async () => {
+  loadCachedToken();
   try {
     await startDaemon();
   } catch (err) {
     console.error("Daemon startup failed:", err.message);
     daemonError += `Startup failed: ${err.message}\n`;
   }
+  // Re-read token after daemon starts (in case it was just created by onboarding).
+  loadCachedToken();
   createWindow();
   initAutoUpdater();
 });
