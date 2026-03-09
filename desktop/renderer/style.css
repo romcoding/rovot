@@ -120,7 +120,11 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 16px;
+  /* Left padding leaves room for macOS traffic-light buttons (close/min/max).
+     With trafficLightPosition { x:16, y:15 } the three 12-px circles end at
+     ~x 76 px, so 80 px keeps the "Rovot" title from overlapping them.
+     On Windows / Linux the extra whitespace is harmless. */
+  padding: 0 16px 0 80px;
   height: 42px;
   background: var(--topbar-bg);
   color: var(--topbar-text);

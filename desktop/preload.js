@@ -1,20 +1,10 @@
 const { contextBridge, ipcRenderer } = require("electron");
-const os = require("os");
-const path = require("path");
-const fs = require("fs");
-
-function tokenFile() {
-  return path.join(os.homedir(), ".rovot", "auth_token.txt");
-}
 
 contextBridge.exposeInMainWorld("rovot", {
-  readToken: () => {
-    try {
-      return fs.readFileSync(tokenFile(), "utf-8").trim();
-    } catch (e) {
-      return "";
-    }
-  },
+  // Async: token is read once at startup by the main process and returned from
+  // an in-memory cache.  Call this once at renderer init and cache the result
+  // locally — do NOT call on every API request.
+  getToken: () => ipcRenderer.invoke("get-token"),
   baseUrl: () => "http://127.0.0.1:18789",
   getDaemonError: () => ipcRenderer.invoke("get-daemon-error"),
 });
