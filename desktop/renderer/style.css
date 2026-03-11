@@ -804,3 +804,253 @@ select {
 .sec-toggle {
   margin-top: 10px;
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   NEW UI IMPROVEMENTS — appended
+   ═══════════════════════════════════════════════════════════════ */
+
+/* -- Message wrappers (timestamp + copy button support) -- */
+.msg-wrapper {
+  display: flex;
+  flex-direction: column;
+  max-width: 82%;
+}
+.msg-wrapper.user  { align-self: flex-end;   align-items: flex-end; }
+.msg-wrapper.assistant { align-self: flex-start; align-items: flex-start; }
+/* Remove old self-alignment from .msg (wrapper owns it now) */
+.msg.user      { align-self: unset; max-width: unset; }
+.msg.assistant { align-self: unset; max-width: unset; }
+
+/* -- Message meta row (timestamp + copy) -- */
+.msg-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.msg-wrapper:hover .msg-meta { opacity: 1; }
+.msg-timestamp {
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.btn-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 5px;
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 10px;
+  gap: 3px;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.btn-copy:hover { background: var(--bg-secondary); color: var(--text); }
+.btn-copy.copied { color: var(--success); border-color: var(--success); }
+
+/* -- Enhanced markdown in assistant messages -- */
+.msg.assistant h1 { font-size: 1.15em; font-weight: 700; margin: 10px 0 4px; }
+.msg.assistant h2 { font-size: 1.05em; font-weight: 700; margin: 8px 0 4px; }
+.msg.assistant h3 { font-size: 1em;    font-weight: 600; margin: 6px 0 3px; }
+.msg.assistant ul,
+.msg.assistant ol { padding-left: 22px; margin: 5px 0; }
+.msg.assistant li { margin: 2px 0; line-height: 1.5; }
+.msg.assistant blockquote {
+  border-left: 3px solid var(--border);
+  padding-left: 10px;
+  color: var(--text-secondary);
+  margin: 6px 0;
+  font-style: italic;
+}
+.msg.assistant a.md-link {
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.msg.assistant hr {
+  border: none;
+  border-top: 1px solid var(--border-light);
+  margin: 8px 0;
+}
+/* Better code block contrast in dark mode */
+@media (prefers-color-scheme: dark) {
+  .msg.assistant .md-code-block { background: #1a1a1c; }
+}
+
+/* -- Toast notifications -- */
+#toast-container {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+  max-width: 380px;
+}
+.toast {
+  padding: 11px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+  pointer-events: auto;
+  box-shadow: var(--shadow-lg);
+  animation: toast-in 0.18s ease;
+  line-height: 1.4;
+}
+.toast-error { background: var(--danger); color: #fff; }
+.toast-warning { background: var(--warning); color: #fff; }
+.toast-info  { background: var(--bg-secondary); border: 1px solid var(--border); color: var(--text); }
+.toast-success { background: var(--success); color: #fff; }
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes toast-out {
+  to { opacity: 0; transform: translateY(8px); }
+}
+
+/* -- Settings tabbed shell -- */
+.settings-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.settings-tabs-bar {
+  display: flex;
+  border-bottom: 1px solid var(--border-light);
+  padding: 0 24px;
+  background: var(--bg);
+  flex-shrink: 0;
+}
+.settings-tab {
+  padding: 10px 16px;
+  border: none;
+  background: none;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color 0.12s, border-color 0.12s;
+}
+.settings-tab:hover { color: var(--text); }
+.settings-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.settings-content {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+.settings-panel {
+  display: none;
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+}
+.settings-panel.active { display: block; }
+
+/* -- Chat empty state -- */
+#messages { position: relative; }
+.chat-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 24px 40px;
+  text-align: center;
+  gap: 10px;
+  color: var(--text-secondary);
+}
+.chat-empty.hidden { display: none; }
+.empty-icon { opacity: 0.2; margin-bottom: 4px; }
+.chat-empty h3 { font-size: 18px; font-weight: 600; color: var(--text); }
+.chat-empty p { font-size: 13px; max-width: 320px; line-height: 1.5; }
+.prompt-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 8px;
+}
+.prompt-chip {
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  font-size: 12px;
+  background: var(--bg);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.prompt-chip:hover {
+  background: var(--bg-secondary);
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+/* -- Session history dropdown -- */
+.session-history-wrap { position: relative; }
+.session-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 200;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  min-width: 260px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.session-item {
+  padding: 10px 14px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border-light);
+  transition: background 0.1s;
+}
+.session-item:last-child { border-bottom: none; }
+.session-item:hover { background: var(--bg-secondary); }
+.session-item-title {
+  font-size: 13px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.session-item-meta { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.session-dropdown-empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* -- Inline approval cards (in message stream) -- */
+.msg-approval-wrap {
+  align-self: stretch;
+  max-width: 100%;
+  margin: 4px 0;
+}
+.msg-approval-wrap .approval-card {
+  border-left: 3px solid var(--warning);
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+
+/* -- Auto-resize textarea -- */
+#input {
+  /* rows="1" in HTML; JS sets height dynamically */
+  min-height: 42px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+/* -- Approval button row (three buttons) -- */
+.approval-actions { flex-wrap: wrap; }
