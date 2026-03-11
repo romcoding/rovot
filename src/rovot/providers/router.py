@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from rovot.config import ModelProviderMode
 from rovot.providers.base import ChatResponse
+from rovot.providers.internal import InternalProvider
 from rovot.providers.openai_compat import OpenAICompatProvider
 
 
@@ -18,10 +19,14 @@ class ProviderRouter:
     cloud: OpenAICompatProvider | None
     mode: ModelProviderMode = ModelProviderMode.LOCAL
     fallback_to_cloud: bool = False
+    internal: InternalProvider = field(default_factory=InternalProvider)
 
     async def chat(
         self, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None = None
     ) -> ChatResponse:
+        if self.mode == ModelProviderMode.INTERNAL:
+            return await self.internal.chat(messages, tools)
+
         if self.mode == ModelProviderMode.CLOUD:
             if not self.cloud:
                 raise ProviderSelectionError("Cloud provider is not configured")
@@ -39,6 +44,9 @@ class ProviderRouter:
             return await self.cloud.chat(messages, tools)
 
     async def list_models(self) -> list[str]:
+        if self.mode == ModelProviderMode.INTERNAL:
+            return await self.internal.list_models()
+
         if self.mode == ModelProviderMode.CLOUD:
             if not self.cloud:
                 return []
@@ -55,6 +63,8 @@ class ProviderRouter:
             return await self.cloud.list_models()
 
     def supports_tools(self) -> bool:
+        if self.mode == ModelProviderMode.INTERNAL:
+            return self.internal.supports_tools()
         return True
 
     def supports_streaming(self) -> bool:
