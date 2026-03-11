@@ -820,6 +820,41 @@ function connectWs() {
       if (msg.event === "approval.resolved")  { refreshApprovals(); addTimelineEvent("approval_resolved", "Approval resolved via WS"); }
       if (msg.event === "tool.call")          { addTimelineEvent("tool_call", msg.data?.tool || "tool invoked"); }
       if (msg.event === "tool.result")        { addTimelineEvent("tool_call", `Result: ${(msg.data?.summary || "done").slice(0, 80)}`); }
+
+      // Model download progress
+      if (msg.event === "model_download_progress") {
+        const { filename, progress } = msg.data || {};
+        const pct = Math.round((progress || 0) * 100);
+        const progressBox = document.getElementById(`progress-${CSS.escape(filename || "")}`);
+        if (progressBox) {
+          progressBox.classList.remove("hidden");
+          const fill  = progressBox.querySelector(".progress-fill");
+          const label = progressBox.querySelector(".progress-label");
+          if (fill)  fill.style.width  = pct + "%";
+          if (label) label.textContent = pct + "%";
+        }
+      }
+      if (msg.event === "model_download_complete") {
+        const { filename } = msg.data || {};
+        showToast(`Downloaded ${filename || "model"} successfully.`, "success", 4000);
+        loadBuiltinSection();
+      }
+      if (msg.event === "model_download_error") {
+        const { filename, error } = msg.data || {};
+        showToast(`Download failed for ${filename || "model"}: ${error || "unknown error"}`, "error", 6000);
+        loadBuiltinSection();
+      }
+      if (msg.event === "model_load_complete") {
+        const { filename } = msg.data || {};
+        showToast(`Model loaded: ${filename || ""}`, "success", 3000);
+        loadBuiltinSection();
+        refreshConfig();
+      }
+      if (msg.event === "model_load_error") {
+        const { filename, error } = msg.data || {};
+        showToast(`Failed to load ${filename || "model"}: ${error || "unknown error"}`, "error", 6000);
+        loadBuiltinSection();
+      }
     } catch (_) {}
   };
 }
@@ -1032,6 +1067,10 @@ async function loadModelsView() {
     document.getElementById("cloud-api-key").value        = "";
     document.getElementById("model-base-url").value       = cachedConfig.model?.base_url || "";
     document.getElementById("model-name").value           = cachedConfig.model?.model || "";
+
+    const mode = cachedConfig.model?.provider_mode || "local";
+    _updateBuiltinModeToggle(mode);
+    if (mode === "internal") await loadBuiltinSection();
   }
 
   const container = document.getElementById("detected-models");
