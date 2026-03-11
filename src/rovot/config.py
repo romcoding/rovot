@@ -20,6 +20,7 @@ class ModelProviderMode(str, Enum):
     LOCAL = "local"
     CLOUD = "cloud"
     AUTO = "auto"
+    INTERNAL = "internal"
 
 
 class Settings(BaseSettings):

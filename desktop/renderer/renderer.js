@@ -402,6 +402,14 @@ function updateIndicators() {
   const providerMode = cachedConfig.model?.provider_mode || "local";
   const localBaseUrl = cachedConfig.model?.base_url || "";
   const cloudBaseUrl = cachedConfig.model?.cloud_base_url || "";
+
+  if (providerMode === "internal") {
+    modelIndicator.textContent = "Built-in";
+    privacyIndicator.textContent = "Local";
+    privacyIndicator.className = "indicator privacy-local";
+    return;
+  }
+
   const modelName =
     providerMode === "cloud"
       ? cachedConfig.model?.cloud_model || ""
@@ -573,6 +581,37 @@ function connectWs() {
       if (msg.event === "tool.result") {
         addTimelineEvent("tool_call", `Result: ${(msg.data?.summary || "done").slice(0, 80)}`);
       }
+      if (msg.event === "model_download_progress") {
+        const filename = msg.data?.filename;
+        const pct = Math.round((msg.data?.progress || 0) * 100);
+        const progressBox = document.getElementById(`progress-${CSS.escape(filename)}`);
+        if (progressBox) {
+          progressBox.classList.remove("hidden");
+          const fill = progressBox.querySelector(".progress-fill");
+          const label = progressBox.querySelector(".progress-label");
+          if (fill) fill.style.width = `${pct}%`;
+          if (label) label.textContent = `${pct}%`;
+        }
+      }
+      if (msg.event === "model_download_complete") {
+        addTimelineEvent("chat", `Model downloaded: ${msg.data?.filename}`);
+        if (document.getElementById("view-models").classList.contains("active")) {
+          await loadBuiltinSection();
+        }
+      }
+      if (msg.event === "model_load_complete") {
+        addTimelineEvent("chat", `Model loaded: ${msg.data?.filename}`);
+        if (document.getElementById("view-models").classList.contains("active")) {
+          await loadBuiltinSection();
+        }
+        await refreshConfig();
+      }
+      if (msg.event === "model_load_error") {
+        addTimelineEvent("error", `Model load failed: ${msg.data?.error}`);
+        if (document.getElementById("view-models").classList.contains("active")) {
+          await loadBuiltinSection();
+        }
+      }
     } catch (_) {}
   };
 }
@@ -613,18 +652,181 @@ recBtn.onclick = async () => {
   } catch (_) {}
 };
 
+// ── Built-in Models ──
+
+const _downloadProgress = {}; // filename -> progress element
+
+function _updateBuiltinModeToggle(mode) {
+  document.getElementById("mode-builtin").classList.toggle("active", mode === "internal");
+  document.getElementById("mode-external").classList.toggle("active", mode !== "internal");
+  document.getElementById("builtin-models-section").classList.toggle("hidden", mode !== "internal");
+}
+
+async function loadBuiltinSection() {
+  // Loaded model status
+  const statusEl = document.getElementById("builtin-loaded-status");
+  try {
+    const r = await api("/models/internal/loaded");
+    const data = await r.json();
+    if (data.loading) {
+      statusEl.innerHTML = '<span class="status-spinner" style="display:inline-block;width:14px;height:14px;margin-right:6px"></span>Loading model...';
+    } else if (data.loaded) {
+      statusEl.innerHTML = `<strong>${escapeHtml(data.loaded)}</strong> loaded &nbsp;
+        <button class="btn danger btn-sm" id="unload-model-btn">Unload</button>`;
+      document.getElementById("unload-model-btn").addEventListener("click", async () => {
+        await api("/models/internal/unload", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` } });
+        await loadBuiltinSection();
+        await refreshConfig();
+      });
+    } else {
+      statusEl.textContent = "No model loaded";
+    }
+  } catch (_) {
+    statusEl.textContent = "Built-in inference unavailable";
+  }
+
+  // Available (downloaded) models
+  const availEl = document.getElementById("builtin-available-list");
+  availEl.innerHTML = "";
+  try {
+    const r2 = await api("/models/internal/available");
+    const data2 = await r2.json();
+    const models = data2.models || [];
+    if (models.length === 0) {
+      availEl.innerHTML = '<div class="info-box">No models downloaded yet. Use the catalog below.</div>';
+    } else {
+      models.forEach((filename) => {
+        const el = document.createElement("div");
+        el.className = "probe-item found";
+        el.innerHTML = `<span class="probe-label">${escapeHtml(filename)}</span>
+          <button class="btn primary btn-sm" data-filename="${escapeHtml(filename)}">Load</button>`;
+        el.querySelector("button").addEventListener("click", async () => {
+          el.querySelector("button").disabled = true;
+          el.querySelector("button").textContent = "Loading...";
+          await api("/models/internal/load", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+            body: JSON.stringify({ model_filename: filename }),
+          });
+          document.getElementById("builtin-loaded-status").innerHTML =
+            '<span class="status-spinner" style="display:inline-block;width:14px;height:14px;margin-right:6px"></span>Loading model...';
+          await api("/config", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+            body: JSON.stringify({ path: "model.provider_mode", value: "internal" }),
+          });
+          await refreshConfig();
+        });
+        availEl.appendChild(el);
+      });
+    }
+  } catch (_) {}
+
+  // Catalog
+  const catalogEl = document.getElementById("builtin-catalog-list");
+  catalogEl.innerHTML = "";
+  try {
+    const r3 = await api("/models/internal/catalog");
+    const catalog = await r3.json();
+    catalog.forEach((item) => {
+      const card = document.createElement("div");
+      card.className = "catalog-card";
+      card.innerHTML = `
+        <div class="catalog-info">
+          <strong>${escapeHtml(item.name)}</strong>
+          ${item.downloaded ? '<span class="badge badge-green">Downloaded</span>' : ""}
+          <span class="catalog-meta">${item.size_gb} GB &bull; ${item.ram_required_gb} GB RAM</span>
+          <span class="catalog-desc">${escapeHtml(item.description)}</span>
+        </div>
+        <div class="catalog-action">
+          ${item.downloaded
+            ? `<button class="btn primary btn-sm catalog-load-btn" data-filename="${escapeHtml(item.filename)}">Load</button>`
+            : `<button class="btn secondary btn-sm catalog-dl-btn" data-filename="${escapeHtml(item.filename)}" data-url="${escapeHtml(item.hf_url)}">Download</button>`}
+          <div class="catalog-progress hidden" id="progress-${escapeHtml(item.filename)}">
+            <div class="progress-bar"><div class="progress-fill" style="width:0%"></div></div>
+            <span class="progress-label">0%</span>
+          </div>
+        </div>
+      `;
+
+      const dlBtn = card.querySelector(".catalog-dl-btn");
+      if (dlBtn) {
+        dlBtn.addEventListener("click", async () => {
+          dlBtn.disabled = true;
+          dlBtn.textContent = "Downloading...";
+          const progressBox = card.querySelector(`#progress-${CSS.escape(item.filename)}`);
+          if (progressBox) progressBox.classList.remove("hidden");
+          await api("/models/internal/download", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+            body: JSON.stringify({ filename: item.filename, hf_url: item.hf_url }),
+          });
+        });
+      }
+
+      const loadBtn = card.querySelector(".catalog-load-btn");
+      if (loadBtn) {
+        loadBtn.addEventListener("click", async () => {
+          loadBtn.disabled = true;
+          loadBtn.textContent = "Loading...";
+          await api("/models/internal/load", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+            body: JSON.stringify({ model_filename: item.filename }),
+          });
+          document.getElementById("builtin-loaded-status").innerHTML =
+            '<span class="status-spinner" style="display:inline-block;width:14px;height:14px;margin-right:6px"></span>Loading model...';
+          await api("/config", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+            body: JSON.stringify({ path: "model.provider_mode", value: "internal" }),
+          });
+          await refreshConfig();
+        });
+      }
+
+      catalogEl.appendChild(card);
+    });
+  } catch (_) {}
+}
+
+document.getElementById("mode-builtin").addEventListener("click", async () => {
+  await api("/config", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+    body: JSON.stringify({ path: "model.provider_mode", value: "internal" }),
+  });
+  _updateBuiltinModeToggle("internal");
+  await loadBuiltinSection();
+  await refreshConfig();
+});
+
+document.getElementById("mode-external").addEventListener("click", async () => {
+  const mode = document.getElementById("provider-mode").value || "local";
+  await api("/config", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+    body: JSON.stringify({ path: "model.provider_mode", value: mode }),
+  });
+  _updateBuiltinModeToggle(mode);
+  await refreshConfig();
+});
+
 // ── Models view ──
 
 async function loadModelsView() {
   await refreshConfig();
   if (cachedConfig) {
-    document.getElementById("provider-mode").value = cachedConfig.model?.provider_mode || "local";
+    const mode = cachedConfig.model?.provider_mode || "local";
+    _updateBuiltinModeToggle(mode);
+    document.getElementById("provider-mode").value = mode === "internal" ? "local" : mode;
     document.getElementById("provider-fallback").checked = cachedConfig.model?.fallback_to_cloud === true;
     document.getElementById("cloud-base-url").value = cachedConfig.model?.cloud_base_url || "";
     document.getElementById("cloud-model-name").value = cachedConfig.model?.cloud_model || "";
     document.getElementById("cloud-api-key").value = "";
     document.getElementById("model-base-url").value = cachedConfig.model?.base_url || "";
     document.getElementById("model-name").value = cachedConfig.model?.model || "";
+    if (mode === "internal") await loadBuiltinSection();
   }
 
   const container = document.getElementById("detected-models");

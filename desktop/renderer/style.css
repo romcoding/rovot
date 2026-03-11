@@ -804,3 +804,94 @@ select {
 .sec-toggle {
   margin-top: 10px;
 }
+
+/* -- Provider mode toggle tabs -- */
+.provider-toggle-row {
+  display: flex;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  width: fit-content;
+  margin-bottom: 4px;
+}
+.provider-tab {
+  background: var(--bg-secondary);
+  border: none;
+  padding: 6px 18px;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: background 0.15s, color 0.15s;
+}
+.provider-tab.active {
+  background: var(--accent);
+  color: #fff;
+}
+.provider-tab:hover:not(.active) {
+  background: var(--bg-tertiary);
+  color: var(--text);
+}
+
+/* -- Catalog cards -- */
+.catalog-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  margin-bottom: 8px;
+  background: var(--bg-secondary);
+}
+.catalog-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.catalog-meta {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.catalog-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.catalog-action {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* -- Progress bar -- */
+.progress-bar {
+  width: 120px;
+  height: 6px;
+  background: var(--bg-tertiary);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+  transition: width 0.3s;
+}
+.progress-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+/* -- Green badge -- */
+.badge-green {
+  background: var(--success);
+  color: #fff;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 600;
+}

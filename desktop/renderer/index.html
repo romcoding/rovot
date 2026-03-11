@@ -219,6 +219,28 @@
           <section id="view-models" class="view">
             <div class="view-inner">
               <h2>Models</h2>
+
+              <!-- Provider mode toggle -->
+              <div class="settings-group">
+                <h3>Inference mode</h3>
+                <div class="provider-toggle-row">
+                  <button id="mode-builtin" class="provider-tab" data-mode="internal">Built-in</button>
+                  <button id="mode-external" class="provider-tab" data-mode="external">External Server</button>
+                </div>
+              </div>
+
+              <!-- Built-in Models section -->
+              <div id="builtin-models-section" class="settings-group hidden">
+                <h3>Built-in Models</h3>
+                <div id="builtin-loaded-status" class="info-box">Loading...</div>
+
+                <h4 style="margin:12px 0 6px">Downloaded models</h4>
+                <div id="builtin-available-list" class="probe-list"></div>
+
+                <h4 style="margin:12px 0 6px">Model Catalog</h4>
+                <div id="builtin-catalog-list"></div>
+              </div>
+
               <div class="settings-group">
                 <h3>Provider routing</h3>
                 <label>Provider mode

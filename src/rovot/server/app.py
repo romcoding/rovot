@@ -16,7 +16,7 @@ from rovot.policy.engine import PolicyEngine
 from rovot.secrets import SecretsStore
 from rovot.server.deps import AppState, ensure_auth_token
 from rovot.server.ws import WebSocketHub
-from rovot.server.routes import approvals, audit, channels, chat, config, health, models, voice
+from rovot.server.routes import approvals, audit, channels, chat, config, health, models, models_internal, voice
 
 logger = logging.getLogger("rovot.server")
 
@@ -24,9 +24,12 @@ logger = logging.getLogger("rovot.server")
 def create_app() -> FastAPI:
     startup_ts = time.time()
     pid = os.getpid()
+    from rovot.internal_model import MODELS_DIR
+
     settings = Settings()
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     settings.workspace_dir.mkdir(parents=True, exist_ok=True)
+    MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
     if settings.host != "127.0.0.1":
         logger.warning(
@@ -81,6 +84,7 @@ def create_app() -> FastAPI:
     app.include_router(voice.router)
     app.include_router(audit.router)
     app.include_router(models.router)
+    app.include_router(models_internal.router)
     app.include_router(channels.router)
 
     @app.exception_handler(Exception)
