@@ -783,6 +783,26 @@ document.addEventListener("click", () => {
 
 // ── Tool steps section (non-streaming) ──
 
+function getToolStepLabel(name, args) {
+  if (name === "browser.navigate" && args.url) {
+    try { return new URL(args.url).hostname; } catch (_) { return String(args.url).slice(0, 40); }
+  }
+  if (name === "browser.search" && args.query) {
+    return `"${String(args.query).slice(0, 35)}"`;
+  }
+  if (name === "macos.applescript" && args.script) {
+    return String(args.script).slice(0, 35) + "…";
+  }
+  if (name === "macos.screenshot") return args.region || "full screen";
+  if (name === "exec.run" && args.command) return String(args.command).slice(0, 40);
+  if (name === "fs.read" && args.path) return args.path;
+  if (name === "fs.write" && args.path) return args.path;
+  if (name === "fs.list_dir") return args.path || ".";
+  if (name === "email.send" && args.to) return `to: ${args.to}`;
+  const key = Object.values(args)[0] || "";
+  return String(key).slice(0, 40);
+}
+
 function renderToolSteps(toolCalls) {
   if (!toolCalls || toolCalls.length === 0) return null;
   const section = document.createElement("div");
@@ -800,8 +820,7 @@ function renderToolSteps(toolCalls) {
   toolCalls.forEach((tc, i) => {
     const name = tc.name || tc.tool_name || "tool";
     const args = tc.arguments || tc.args || {};
-    const key = Object.values(args)[0] || "";
-    const keyStr = String(key).slice(0, 40);
+    const keyStr = getToolStepLabel(name, args);
     const step = document.createElement("div");
     step.className = "tool-step";
     step.innerHTML = `<span class="tool-step-status">✓</span>
@@ -936,8 +955,7 @@ async function sendMessage() {
           case "tool_call": {
             const name = event.name || "tool";
             const args = event.args || {};
-            const key = Object.values(args)[0] || "";
-            const keyStr = String(key).slice(0, 40);
+            const keyStr = getToolStepLabel(name, args);
             stepCount++;
             stepsContainer.style.display = "";
             stepsContainer.querySelector(".steps-count").textContent = stepCount;
