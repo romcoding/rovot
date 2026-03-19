@@ -1042,7 +1042,7 @@ async function sendMessage() {
             const runningSteps = Array.from(stepsBody.querySelectorAll('.tool-step-running'));
             const runningStep = idx >= 0
               ? runningSteps.find(el => el.dataset.stepIndex === String(idx))
-              : runningSteps.find(el => el.dataset.tool === CSS.escape(name));
+              : runningSteps.find(el => el.dataset.tool === name);
             if (runningStep) {
               runningStep.classList.remove("tool-step-running");
               runningStep.querySelector(".tool-step-status").innerHTML = "✓";
@@ -1677,28 +1677,6 @@ async function loadSecurityView() {
       document.getElementById("system-prompt-editor").value = spd.prompt || "";
     }
   } catch (_) {}
-  document.getElementById("save-system-prompt").onclick = async () => {
-    const prompt = document.getElementById("system-prompt-editor").value;
-    const r = await api("/config/system-prompt", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt }),
-    });
-    const statusEl = document.getElementById("system-prompt-status");
-    statusEl.style.display = "";
-    statusEl.textContent = (await r.json()).note || "System prompt saved.";
-    setTimeout(() => { statusEl.style.display = "none"; }, 3000);
-  };
-  document.getElementById("reset-system-prompt").onclick = async () => {
-    await api("/config/system-prompt", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt: "" }),
-    });
-    document.getElementById("system-prompt-editor").value = "";
-    showToast("System prompt reset to default.", "success", 2500);
-  };
-
   const cp = cachedConfig?.connectors || {};
   const perms = [];
   if (cp.filesystem_enabled !== false) perms.push("Filesystem: read/write (workspace only)");
@@ -1708,6 +1686,28 @@ async function loadSecurityView() {
   document.getElementById("sec-connectors").textContent =
     perms.length > 0 ? perms.join("\n") : "No connectors enabled";
 }
+
+document.getElementById("save-system-prompt").onclick = async () => {
+  const prompt = document.getElementById("system-prompt-editor").value;
+  const r = await api("/config/system-prompt", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt }),
+  });
+  const statusEl = document.getElementById("system-prompt-status");
+  statusEl.style.display = "";
+  statusEl.textContent = (await r.json()).note || "System prompt saved.";
+  setTimeout(() => { statusEl.style.display = "none"; }, 3000);
+};
+document.getElementById("reset-system-prompt").onclick = async () => {
+  await api("/config/system-prompt", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt: "" }),
+  });
+  document.getElementById("system-prompt-editor").value = "";
+  showToast("System prompt reset to default.", "success", 2500);
+};
 
 // ── Logs view ──
 
