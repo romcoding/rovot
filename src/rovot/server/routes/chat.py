@@ -261,6 +261,37 @@ async def chat_continue(
     )
 
 
+class MessageOut(BaseModel):
+    role: str
+    content: str
+    tool_call_id: str | None = None
+    tool_calls: list[dict] = []
+
+
+@router.get("/sessions/{session_id}/messages")
+async def session_messages(
+    session_id: str,
+    auth: AuthContext = Depends(get_auth_ctx),
+    state: AppState = Depends(get_state),
+) -> dict:
+    store = SessionStore(root=state.settings.data_dir / "sessions")
+    session = store.get(session_id)
+    history = session.read_all()
+    return {
+        "session_id": session_id,
+        "messages": [
+            MessageOut(
+                role=m.role,
+                content=m.content,
+                tool_call_id=m.tool_call_id,
+                tool_calls=m.tool_calls,
+            ).model_dump()
+            for m in history
+            if m.role in ("user", "assistant")
+        ],
+    }
+
+
 @router.get("/sessions/{session_id}/stats", response_model=SessionStatsResponse)
 async def session_stats(
     session_id: str,

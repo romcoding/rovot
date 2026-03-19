@@ -33,6 +33,16 @@ class InternalModelProvider:
     def is_loading(self) -> bool:
         return self._loading
 
+    def begin_load(self) -> bool:
+        """Mark loading started. Returns False if already loading."""
+        if self._loading:
+            return False
+        self._loading = True
+        return True
+
+    def end_load(self) -> None:
+        self._loading = False
+
     def loaded_model_name(self) -> Optional[str]:
         if self._loaded_model_path:
             return self._loaded_model_path.name

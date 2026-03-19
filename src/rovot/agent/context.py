@@ -10,6 +10,7 @@ class Message:
     role: str
     content: str
     tool_call_id: str | None = None
+    tool_calls: list[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -66,6 +67,15 @@ class ContextBuilder:
         )
         self._max_context_messages = max_context_messages
 
+        custom_prompt_file = Path.home() / ".rovot" / "system_prompt.txt"
+        if custom_prompt_file.exists():
+            try:
+                user_prompt = custom_prompt_file.read_text("utf-8").strip()
+                if user_prompt:
+                    self._system_prompt = user_prompt
+            except Exception:
+                pass  # fall back to default silently
+
     def build(
         self, history: list[Message], tool_definitions: list[dict[str, Any]] | None
     ) -> Context:
@@ -92,5 +102,7 @@ class ContextBuilder:
             d: dict[str, Any] = {"role": m.role, "content": m.content}
             if m.role == "tool" and m.tool_call_id:
                 d["tool_call_id"] = m.tool_call_id
+            if m.role == "assistant" and m.tool_calls:
+                d["tool_calls"] = m.tool_calls
             msgs.append(d)
         return msgs
