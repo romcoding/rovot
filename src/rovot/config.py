@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     host: str = Field(default="127.0.0.1", description="Bind address for the control plane.")
     port: int = Field(default=18789, description="Port for the control plane.")
     workspace_dir: Path = Field(default=Path.home() / "rovot-workspace")
+    cors_origins: str = Field(default="", description="Comma-separated allowed CORS origins")
+    cloud_mode: bool = Field(default=False, description="Enable cloud/network-accessible mode")
 
 
 class ModelConfig(BaseModel):
