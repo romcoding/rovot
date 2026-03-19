@@ -45,6 +45,7 @@ class AgentLoop:
             )
             if not response.tool_calls:
                 return AgentResponse(reply=response.content, tool_calls=all_tool_calls)
+            msgs.append(Message(role="assistant", content=response.content or "", tool_calls=response.tool_calls))
             for tc in response.tool_calls:
                 all_tool_calls.append(tc)
                 try:
@@ -112,7 +113,8 @@ class AgentLoop:
                 return
 
             # Tool calls: emit events and execute
-            msgs.append(Message(role="assistant", content=response.content or ""))
+            msgs.append(Message(role="assistant", content=response.content or "", tool_calls=response.tool_calls))
+            tool_call_index = 0
             for tc in response.tool_calls:
                 all_tool_calls.append(tc)
                 yield {
@@ -132,7 +134,8 @@ class AgentLoop:
                     msgs.append(
                         Message(role="tool", content=str(result), tool_call_id=tc.get("id"))
                     )
-                    yield {"type": "tool_result", "name": tc.get("name", ""), "summary": summary}
+                    yield {"type": "tool_result", "name": tc.get("name", ""), "summary": summary, "step_index": tool_call_index}
+                    tool_call_index += 1
                 except ApprovalRequired as ar:
                     yield {"type": "approval_required", "approval_id": ar.approval_id}
                     yield {

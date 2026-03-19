@@ -516,6 +516,37 @@ async function probeModels() {
       el.classList.add("found");
       el.querySelector(".probe-status").textContent =
         models.length > 0 ? `Found: ${models.slice(0, 3).join(", ")}` : "server online";
+
+      if (models.length > 0) {
+        el.querySelector(".probe-status").textContent = `Testing ${models[0].id || models[0]}...`;
+        try {
+          const testController = new AbortController();
+          const testTimer = setTimeout(() => testController.abort(), 8000);
+          const testResp = await fetch(`${s.url}/chat/completions`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            signal: testController.signal,
+            body: JSON.stringify({
+              model: models[0].id || models[0],
+              messages: [{ role: "user", content: "hi" }],
+              max_tokens: 5,
+            }),
+          });
+          clearTimeout(testTimer);
+          if (testResp.ok) {
+            el.querySelector(".probe-status").textContent =
+              `✓ Ready — ${models[0].id || models[0]}`;
+            el.dataset.verified = "true";
+          } else {
+            el.querySelector(".probe-status").textContent =
+              `Found but test failed (HTTP ${testResp.status})`;
+            el.classList.replace("found", "not-found");
+          }
+        } catch (_) {
+          el.querySelector(".probe-status").textContent = `Found but test timed out`;
+          el.classList.replace("found", "not-found");
+        }
+      }
     } catch (_) {
       el.classList.remove("scanning");
       el.classList.add("not-found");
@@ -532,7 +563,8 @@ async function finishOnboarding() {
   const compute = document.querySelector('input[name="compute"]:checked').value;
   let useInternalModel = false;
   if (compute === "local") {
-    const found = document.querySelector(".probe-item.found");
+    const found = document.querySelector(".probe-item[data-verified='true']") ||
+                  document.querySelector(".probe-item.found");
     const url = found ? found.getAttribute("data-url") : "http://localhost:1234/v1";
     await api("/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: "model.provider_mode", value: "local" }) });
     await api("/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: "model.base_url", value: url }) });
@@ -750,23 +782,34 @@ function renderSessionHistory() {
     item.addEventListener("click", () => {
       const sid = item.getAttribute("data-session-id");
       restoreSession(sid, item.querySelector(".session-item-title")?.textContent || "");
-      list.classList.add("hidden");
+      list.classList.add("hidden"); // hide dropdown immediately; restoreSession is async
     });
   });
 }
 
-function restoreSession(sessionId, title) {
+async function restoreSession(sessionId, title) {
   currentSessionId = sessionId;
-  // Clear chat and show a restore note — full history lives on the daemon
   messagesEl.innerHTML = "";
   const emptyState = document.getElementById("chat-empty-state");
-  if (emptyState) {
-    emptyState.classList.add("hidden");
-    messagesEl.appendChild(emptyState);
+  if (emptyState) { emptyState.classList.add("hidden"); }
+  try {
+    const r = await api(`/sessions/${sessionId}/messages`);
+    if (r.ok) {
+      const data = await r.json();
+      const msgs = data.messages || [];
+      if (msgs.length === 0) {
+        addMsg("assistant", `Session restored: "${title}"\n\nNo messages found.`);
+      } else {
+        for (const m of msgs) {
+          addMsg(m.role === "user" ? "user" : "assistant", m.content);
+        }
+      }
+    } else {
+      addMsg("assistant", `Continuing session: "${title}"`);
+    }
+  } catch (_) {
+    addMsg("assistant", `Continuing session: "${title}"`);
   }
-  addMsg("assistant",
-    `Continuing session: "${title}"\n\nPrevious messages are stored on the daemon. New messages will continue this conversation.`
-  );
 }
 
 document.getElementById("session-history-btn").addEventListener("click", (e) => {
@@ -929,6 +972,22 @@ async function sendMessage() {
     const decoder = new TextDecoder();
     let buffer = "";
 
+    let lastTokenTs = Date.now();
+    const TOKEN_TIMEOUT_MS = 30000;
+    const stallInterval = setInterval(() => {
+      if (Date.now() - lastTokenTs > TOKEN_TIMEOUT_MS && isSending) {
+        clearInterval(stallInterval);
+        removeTypingIndicator();
+        bubble.classList.remove("streaming");
+        const notice = document.createElement("div");
+        notice.className = "stream-stall-notice";
+        notice.innerHTML = `<span style="color:var(--warning)">⚠ Model stopped responding.</span>
+          <button class="btn secondary btn-sm" onclick="sendMessage()">Retry</button>`;
+        wrapper.appendChild(notice);
+        setSendingState(false);
+      }
+    }, 5000);
+
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -950,6 +1009,7 @@ async function sendMessage() {
             fullText += event.content;
             bubble.innerHTML = renderMarkdown(fullText);
             messagesEl.scrollTop = messagesEl.scrollHeight;
+            lastTokenTs = Date.now();
             break;
 
           case "tool_call": {
@@ -968,6 +1028,7 @@ async function sendMessage() {
               <span class="tool-step-name">${escapeHtml(name)}</span>
               ${keyStr ? `<span class="tool-step-arg">${escapeHtml(keyStr)}</span>` : ""}`;
             step.dataset.tool = name;
+            step.dataset.stepIndex = String(stepCount - 1);
             stepsBody.appendChild(step);
 
             addTimelineEvent("tool_call", `${name}(${JSON.stringify(args).slice(0, 80)})`);
@@ -976,8 +1037,12 @@ async function sendMessage() {
 
           case "tool_result": {
             const name = event.name || "tool";
-            // Find the running step for this tool
-            const runningStep = stepsBody.querySelector(`.tool-step-running[data-tool="${CSS.escape(name)}"]`);
+            // Find the running step by index (preferred) or fall back to name match
+            const idx = event.step_index ?? -1;
+            const runningSteps = Array.from(stepsBody.querySelectorAll('.tool-step-running'));
+            const runningStep = idx >= 0
+              ? runningSteps.find(el => el.dataset.stepIndex === String(idx))
+              : runningSteps.find(el => el.dataset.tool === CSS.escape(name));
             if (runningStep) {
               runningStep.classList.remove("tool-step-running");
               runningStep.querySelector(".tool-step-status").innerHTML = "✓";
@@ -1013,6 +1078,8 @@ async function sendMessage() {
         }
       }
     }
+
+    clearInterval(stallInterval);
 
     // Finalize bubble
     bubble.classList.remove("streaming");
@@ -1157,12 +1224,12 @@ function connectWs() {
       const msg = JSON.parse(ev.data);
       if (msg.event === "chat.reply")         { refreshApprovals(); addTimelineEvent("chat", "Server pushed reply"); }
       if (msg.event === "approval.resolved")  { refreshApprovals(); addTimelineEvent("approval_resolved", "Approval resolved via WS"); }
-      if (msg.event === "tool.call")          { addTimelineEvent("tool_call", msg.data?.tool || "tool invoked"); }
-      if (msg.event === "tool.result")        { addTimelineEvent("tool_call", `Result: ${(msg.data?.summary || "done").slice(0, 80)}`); }
+      if (msg.event === "tool.call")          { addTimelineEvent("tool_call", msg.payload?.tool || "tool invoked"); }
+      if (msg.event === "tool.result")        { addTimelineEvent("tool_call", `Result: ${(msg.payload?.summary || "done").slice(0, 80)}`); }
 
       // Model download progress
       if (msg.event === "model_download_progress") {
-        const { filename, progress } = msg.data || {};
+        const { filename, progress } = msg.payload || {};
         const pct = Math.round((progress || 0) * 100);
         const progressBox = document.getElementById(`progress-${CSS.escape(filename || "")}`);
         if (progressBox) {
@@ -1174,23 +1241,23 @@ function connectWs() {
         }
       }
       if (msg.event === "model_download_complete") {
-        const { filename } = msg.data || {};
+        const { filename } = msg.payload || {};
         showToast(`Downloaded ${filename || "model"} successfully.`, "success", 4000);
         loadBuiltinSection();
       }
       if (msg.event === "model_download_error") {
-        const { filename, error } = msg.data || {};
+        const { filename, error } = msg.payload || {};
         showToast(`Download failed for ${filename || "model"}: ${error || "unknown error"}`, "error", 6000);
         loadBuiltinSection();
       }
       if (msg.event === "model_load_complete") {
-        const { filename } = msg.data || {};
+        const { filename } = msg.payload || {};
         showToast(`Model loaded: ${filename || ""}`, "success", 3000);
         loadBuiltinSection();
         refreshConfig();
       }
       if (msg.event === "model_load_error") {
-        const { filename, error } = msg.data || {};
+        const { filename, error } = msg.payload || {};
         showToast(`Failed to load ${filename || "model"}: ${error || "unknown error"}`, "error", 6000);
         loadBuiltinSection();
       }
@@ -1601,6 +1668,36 @@ async function loadSecurityView() {
   document.getElementById("sec-domains").textContent = domains.length > 0
     ? `Restricted to: ${domains.join(", ")}`
     : "No restrictions (all domains allowed; approval required per fetch)";
+
+  // Load current system prompt
+  try {
+    const spr = await api("/config/system-prompt");
+    if (spr.ok) {
+      const spd = await spr.json();
+      document.getElementById("system-prompt-editor").value = spd.prompt || "";
+    }
+  } catch (_) {}
+  document.getElementById("save-system-prompt").onclick = async () => {
+    const prompt = document.getElementById("system-prompt-editor").value;
+    const r = await api("/config/system-prompt", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt }),
+    });
+    const statusEl = document.getElementById("system-prompt-status");
+    statusEl.style.display = "";
+    statusEl.textContent = (await r.json()).note || "System prompt saved.";
+    setTimeout(() => { statusEl.style.display = "none"; }, 3000);
+  };
+  document.getElementById("reset-system-prompt").onclick = async () => {
+    await api("/config/system-prompt", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: "" }),
+    });
+    document.getElementById("system-prompt-editor").value = "";
+    showToast("System prompt reset to default.", "success", 2500);
+  };
 
   const cp = cachedConfig?.connectors || {};
   const perms = [];

@@ -400,6 +400,16 @@
                       </label>
                     </div>
                     <div class="settings-group">
+                      <h3>System Prompt</h3>
+                      <p class="settings-desc">Override the default agent instructions. Leave blank to use the built-in prompt.</p>
+                      <textarea id="system-prompt-editor" rows="8" placeholder="Enter custom system prompt, or leave blank for default…" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg);color:var(--text);font-size:13px;font-family:inherit;resize:vertical;outline:none;"></textarea>
+                      <div class="btn-row" style="margin-top:8px;justify-content:flex-start;gap:8px;">
+                        <button id="save-system-prompt" class="btn primary">Save</button>
+                        <button id="reset-system-prompt" class="btn secondary">Reset to default</button>
+                      </div>
+                      <div id="system-prompt-status" class="info-box" style="margin-top:8px;display:none;"></div>
+                    </div>
+                    <div class="settings-group">
                       <h3>Allowed domains (web.fetch)</h3>
                       <div id="sec-domains" class="info-box">--</div>
                     </div>

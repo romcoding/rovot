@@ -21,6 +21,7 @@ class Session:
             "role": msg.role,
             "content": msg.content,
             "tool_call_id": msg.tool_call_id,
+            "tool_calls": msg.tool_calls,
         }
         with self.path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")
@@ -38,6 +39,7 @@ class Session:
                     role=rec["role"],
                     content=rec["content"],
                     tool_call_id=rec.get("tool_call_id"),
+                    tool_calls=rec.get("tool_calls") or [],
                 )
             )
         return out

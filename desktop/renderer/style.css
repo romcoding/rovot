@@ -1335,3 +1335,22 @@ select {
 
 /* ── Builtin onboard note ── */
 #builtin-onboard-note { margin: 8px 0; }
+
+/* ── Probe verified state ── */
+.probe-item[data-verified='true'] {
+  border-color: var(--success);
+  background: rgba(52, 199, 89, 0.06);
+}
+.probe-item[data-verified='true'] .probe-status {
+  color: var(--success);
+}
+
+/* ── Stream stall notice ── */
+.stream-stall-notice {
+  padding: 8px 14px;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+}

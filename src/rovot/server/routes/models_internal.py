@@ -89,17 +89,16 @@ async def load_model(
     """Load a .gguf model. Runs in a background thread to avoid blocking."""
     provider = get_internal_provider()
 
-    if provider.is_loading():
+    if not provider.begin_load():
         raise HTTPException(status_code=409, detail="A model is already loading.")
 
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
     model_path = MODELS_DIR / req.model_filename
     if not model_path.exists():
+        provider.end_load()
         raise HTTPException(
             status_code=404, detail=f"Model not found: {req.model_filename}"
         )
-
-    provider._loading = True  # noqa: SLF001
 
     async def _do_load():
         loop = asyncio.get_event_loop()
@@ -125,7 +124,7 @@ async def load_model(
                 "model_load_error", {"filename": req.model_filename, "error": str(exc)}
             )
         finally:
-            provider._loading = False  # noqa: SLF001
+            provider.end_load()
 
     asyncio.create_task(_do_load())
     return {"status": "loading", "filename": req.model_filename}
