@@ -33,15 +33,15 @@ def register_browser_tools(registry: ToolRegistry, browser: BrowserConnector | N
     registry.register(
         Tool(
             name="browser.search",
-            description="Search the web using a search engine and return top results.",
+            description="Search the web using a search engine and return top results. DuckDuckGo (default), Google, or Bing.",
             parameters={
                 "type": "object",
                 "properties": {
                     "query": {"type": "string", "description": "The search query"},
                     "engine": {
                         "type": "string",
-                        "enum": ["google", "duckduckgo", "bing"],
-                        "description": "Search engine to use (default: google)",
+                        "enum": ["duckduckgo", "google", "bing"],
+                        "description": "Search engine to use (default: duckduckgo)",
                     },
                 },
                 "required": ["query"],

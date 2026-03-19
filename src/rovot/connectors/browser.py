@@ -97,33 +97,36 @@ class BrowserConnector:
         except Exception as exc:
             return {"error": str(exc), "url": url}
 
-    async def search(self, query: str, engine: str = "google") -> dict[str, Any]:
-        """Search the web and return top results."""
-        engines = {
-            "google": f"https://www.google.com/search?q={query.replace(' ', '+')}",
-            "duckduckgo": f"https://duckduckgo.com/?q={query.replace(' ', '+')}",
-            "bing": f"https://www.bing.com/search?q={query.replace(' ', '+')}",
+    async def search(self, query: str, engine: str = "duckduckgo") -> dict[str, Any]:
+        """Search the web. DuckDuckGo (default), Google, or Bing."""
+        encoded = query.replace(" ", "+")
+        urls = {
+            "duckduckgo": f"https://html.duckduckgo.com/html/?q={encoded}",
+            "google": f"https://www.google.com/search?q={encoded}&hl=en",
+            "bing": f"https://www.bing.com/search?q={encoded}",
         }
-        url = engines.get(engine, engines["google"])
+        url = urls.get(engine, urls["duckduckgo"])
         page = await self._get_page()
         try:
-            await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-            # Extract search result links and snippets
+            await page.goto(url, wait_until="domcontentloaded", timeout=15000)
             results: list[dict[str, str]] = []
-            if engine == "google" or engine not in engines:
-                anchors = await page.query_selector_all("div.g a[href]")
-                for a in anchors[:10]:
-                    href = await a.get_attribute("href")
-                    if not href or not href.startswith("http"):
-                        continue
-                    title_el = await a.query_selector("h3")
-                    title = await title_el.inner_text() if title_el else ""
+            if engine == "duckduckgo" or engine not in urls:
+                links = await page.query_selector_all(".result__a")
+                snippets = await page.query_selector_all(".result__snippet")
+                for i, link in enumerate(links[:8]):
+                    title = await link.inner_text()
+                    href = await link.get_attribute("href") or ""
+                    snippet = await snippets[i].inner_text() if i < len(snippets) else ""
                     if title and href:
-                        results.append({"title": title, "url": href, "snippet": ""})
+                        results.append({
+                            "title": title.strip(),
+                            "url": href,
+                            "snippet": snippet.strip(),
+                        })
             else:
                 text = await _extract_content(page)
                 results = [{"title": query, "url": url, "snippet": text[:500]}]
-            return {"query": query, "engine": engine, "results": results[:10]}
+            return {"query": query, "engine": engine, "results": results}
         except Exception as exc:
             return {"error": str(exc), "query": query}
 
