@@ -36,6 +36,10 @@ PYINSTALLER_ARGS=(
   --hidden-import multipart
   --collect-submodules pydantic
   --collect-submodules keyring
+  --hidden-import playwright
+  --hidden-import playwright.async_api
+  --collect-all playwright
+  --add-data "$("$PYTHON_BIN" -c 'import playwright, os; print(os.path.join(os.path.dirname(playwright.__file__), "driver"))'):playwright/driver"
   "$ROOT/src/rovot/cli.py"
 )
 
@@ -43,6 +47,10 @@ if [[ "$(uname)" == "Darwin" && -n "$ARCH" ]]; then
   PYINSTALLER_ARGS+=(--target-architecture "$ARCH")
   echo "Building for macOS architecture: $ARCH"
 fi
+
+# Install Playwright browsers for bundling
+echo "Installing Playwright Chromium..."
+"$PYTHON_BIN" -m playwright install chromium
 
 cd "$ROOT"
 if ! "$PYTHON_BIN" -m PyInstaller --version >/dev/null 2>&1; then

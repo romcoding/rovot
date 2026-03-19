@@ -9,6 +9,21 @@ hiddenimports = ['uvicorn.logging', 'uvicorn.loops.auto', 'uvicorn.protocols.htt
 hiddenimports += collect_submodules('pydantic')
 hiddenimports += collect_submodules('keyring')
 hiddenimports += ['llama_cpp']
+hiddenimports += ['playwright', 'playwright.async_api', 'playwright.sync_api']
+
+import subprocess as _sp
+try:
+    _pw_driver = _sp.check_output(
+        [sys.executable, '-c',
+         'import playwright, os; print(os.path.join(os.path.dirname(playwright.__file__), "driver"))'],
+        text=True
+    ).strip()
+    if os.path.isdir(_pw_driver):
+        _pw_datas = [(_pw_driver, 'playwright/driver')]
+    else:
+        _pw_datas = []
+except Exception:
+    _pw_datas = []
 
 # Bundle llama-cpp-python shared libraries so the packaged binary can load them.
 _llama_binaries = []
@@ -28,7 +43,7 @@ a = Analysis(
     ['/Users/romanhess/Coding/2026/rovot/src/rovot/cli.py'],
     pathex=['/Users/romanhess/Coding/2026/rovot/src'],
     binaries=_llama_binaries,
-    datas=[],
+    datas=_pw_datas,
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},

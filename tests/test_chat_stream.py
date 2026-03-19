@@ -132,6 +132,64 @@ def test_browser_tools_registered_when_provided():
     assert "browser.type" in names
 
 
+# ── AgentLoop.stream() single model call ─────────────────────────────────────
+
+def test_stream_single_model_call():
+    from rovot.agent.loop import AgentLoop
+    from rovot.agent.context import ContextBuilder, Message
+    from rovot.providers.base import ChatResponse
+    from rovot.agent.tools.registry import ToolRegistry
+    from rovot.policy.approvals import ApprovalManager
+    from rovot.policy.engine import PolicyEngine, AuthContext
+
+    call_count = 0
+
+    class FakeProvider:
+        async def chat(self, messages, tools=None):
+            nonlocal call_count
+            call_count += 1
+            return ChatResponse(content="Hello world", tool_calls=[])
+
+        async def list_models(self):
+            return []
+
+        def supports_tools(self):
+            return False
+
+        def supports_streaming(self):
+            return False
+
+        def supports_vision(self):
+            return False
+
+    approvals = ApprovalManager(Path("/tmp/test_stream.json"))
+    policy = PolicyEngine(approvals)
+    tools = ToolRegistry(policy=policy)
+    loop = AgentLoop(
+        provider=FakeProvider(),
+        tools=tools,
+        ctx_builder=ContextBuilder(),
+    )
+    auth = AuthContext(
+        token="t",
+        scopes=["operator.read", "operator.write", "operator.approvals"],
+    )
+    history = [Message(role="user", content="hi")]
+
+    async def _run():
+        events = []
+        async for event in loop.stream(auth=auth, session_id="s1", history=history):
+            events.append(event)
+        return events
+
+    events = asyncio.run(_run())
+    assert call_count == 1, f"Expected 1 model call, got {call_count}"
+    token_events = [e for e in events if e["type"] == "token"]
+    assert len(token_events) > 0
+    done_events = [e for e in events if e["type"] == "done"]
+    assert len(done_events) == 1
+
+
 # ── macOS tools registration ──────────────────────────────────────────────────
 
 def test_macos_tools_not_registered_when_disabled():

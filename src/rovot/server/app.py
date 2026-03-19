@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import time
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,6 +12,7 @@ from fastapi.responses import JSONResponse
 from rovot import __version__
 from rovot.audit import AuditLogger
 from rovot.config import ConfigStore, Settings
+from rovot.connectors.loader import shutdown_browser
 from rovot.policy.approvals import ApprovalManager
 from rovot.policy.engine import PolicyEngine
 from rovot.secrets import SecretsStore
@@ -19,6 +21,12 @@ from rovot.server.ws import WebSocketHub
 from rovot.server.routes import approvals, audit, channels, chat, config, health, models, models_internal, voice
 
 logger = logging.getLogger("rovot.server")
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):  # type: ignore[type-arg]
+    yield
+    await shutdown_browser()
 
 
 def create_app() -> FastAPI:
@@ -53,7 +61,7 @@ def create_app() -> FastAPI:
     ws = WebSocketHub()
     audit_logger = AuditLogger(path=settings.data_dir / "audit.log")
 
-    app = FastAPI(title="Rovot Control Plane", version=__version__, docs_url="/docs")
+    app = FastAPI(title="Rovot Control Plane", version=__version__, docs_url="/docs", lifespan=_lifespan)
     cors_origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
     if not cors_origins:
         cors_origins = ["http://localhost", "http://127.0.0.1"] if settings.cloud_mode else ["*"]
