@@ -17,6 +17,8 @@ dependencies = [
     "keyring>=25.6",
     # Install with: CMAKE_ARGS="-DGGML_METAL=on" pip install llama-cpp-python
     "llama-cpp-python>=0.3.0",
+    # Browser automation (run `playwright install chromium` after pip install)
+    "playwright>=1.40",
 ]
 
 [project.optional-dependencies]
@@ -27,6 +29,7 @@ dev = [
 ]
 packaging = [
     "pyinstaller>=6.12",
+    "playwright>=1.40",
 ]
 
 [project.scripts]

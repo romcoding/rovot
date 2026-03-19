@@ -68,6 +68,8 @@ class ConnectorsConfig(BaseModel):
     email: EmailConnectorConfig = Field(default_factory=EmailConnectorConfig)
     calendar_enabled: bool = False
     messaging: MessagingConnectorConfig = Field(default_factory=MessagingConnectorConfig)
+    browser_enabled: bool = False
+    macos_automation_enabled: bool = False
 
 
 class VoiceConfig(BaseModel):
@@ -86,6 +88,7 @@ class AppConfig(BaseModel):
     connectors: ConnectorsConfig = Field(default_factory=ConnectorsConfig)
     voice: VoiceConfig = Field(default_factory=VoiceConfig)
     max_iterations: int = 25
+    max_context_messages: int = 40
 
 
 @dataclass

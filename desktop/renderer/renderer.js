@@ -34,6 +34,9 @@ let timelineCollapsed = false;
 let wsRetryCount      = 0;
 const WS_MAX_RETRIES  = 5;
 
+// Streaming state
+let streamAbortController = null;
+
 // Tools approved for the entire session (persists until page reload)
 const sessionAllowedTools = new Set();
 
@@ -264,9 +267,26 @@ function removeTypingIndicator() {
 
 function setSendingState(sending) {
   isSending = sending;
-  sendBtn.disabled = sending;
-  sendBtn.textContent = sending ? "…" : "Send";
   inputEl.disabled = sending;
+  if (sending) {
+    sendBtn.textContent = "Stop";
+    sendBtn.classList.add("btn-stop");
+    sendBtn.onclick = stopStreaming;
+  } else {
+    sendBtn.textContent = "Send";
+    sendBtn.classList.remove("btn-stop");
+    sendBtn.onclick = sendMessage;
+    streamAbortController = null;
+  }
+}
+
+function stopStreaming() {
+  if (streamAbortController) {
+    streamAbortController.abort();
+    streamAbortController = null;
+  }
+  setSendingState(false);
+  removeTypingIndicator();
 }
 
 // ── Activity Timeline ──
@@ -345,6 +365,9 @@ async function waitForBackend(maxAttempts = 15) {
   backendError.classList.add("hidden");
   let lastHealthError = "";
 
+  const connectingMsg = backendConnecting.querySelector("p");
+  const connectingH2  = backendConnecting.querySelector("h2");
+
   const fetchHealthWithTimeout = async (timeoutMs = 1500) => {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -356,6 +379,22 @@ async function waitForBackend(maxAttempts = 15) {
   };
 
   for (let i = 0; i < maxAttempts; i++) {
+    if (connectingH2) connectingH2.textContent = `Connecting to backend... (attempt ${i + 1}/${maxAttempts})`;
+
+    if (i === 5 && connectingMsg) {
+      connectingMsg.textContent = "Taking longer than expected. The daemon may still be starting.";
+    }
+    if (i === 3) {
+      // Show daemon error log early
+      try {
+        const errMsg = await window.rovot.getDaemonError();
+        if (errMsg && errMsg.trim()) {
+          const detail = document.getElementById("backend-error-detail");
+          if (detail) detail.textContent = errMsg.slice(-500);
+        }
+      } catch (_) {}
+    }
+
     try {
       const r = await fetchHealthWithTimeout();
       if (r.ok) { backendOverlay.classList.add("hidden"); return true; }
@@ -417,6 +456,8 @@ function setupOnboarding() {
       radio.closest(".option-card").classList.add("selected");
       const apiSection = document.getElementById("api-key-section");
       apiSection.classList.toggle("hidden", radio.value !== "api");
+      const builtinNote = document.getElementById("builtin-onboard-note");
+      if (builtinNote) builtinNote.classList.toggle("hidden", radio.value !== "builtin");
     });
   });
 
@@ -457,15 +498,24 @@ async function probeModels() {
   for (const s of servers) {
     const el = container.querySelector(`[data-url="${s.url}"]`);
     try {
-      const r = await api("/models/available?base_url=" + encodeURIComponent(s.url));
-      if (r.ok) {
-        const data = await r.json();
-        const models = data.models || [];
-        el.classList.remove("scanning");
-        el.classList.add("found");
-        el.querySelector(".probe-status").textContent =
-          models.length > 0 ? `${models.length} model(s)` : "server online";
-      } else { throw new Error("not ok"); }
+      // Probe directly from renderer (not via daemon) with short timeout
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 2000);
+      let models = [];
+      try {
+        const r = await fetch(`${s.url}/models`, { signal: controller.signal });
+        clearTimeout(timer);
+        if (r.ok) {
+          const data = await r.json();
+          models = (data.data || []).map((m) => m.id || m).filter(Boolean);
+        } else { throw new Error("not ok"); }
+      } finally {
+        clearTimeout(timer);
+      }
+      el.classList.remove("scanning");
+      el.classList.add("found");
+      el.querySelector(".probe-status").textContent =
+        models.length > 0 ? `Found: ${models.slice(0, 3).join(", ")}` : "server online";
     } catch (_) {
       el.classList.remove("scanning");
       el.classList.add("not-found");
@@ -480,11 +530,15 @@ async function finishOnboarding() {
   btn.textContent = "Saving…";
 
   const compute = document.querySelector('input[name="compute"]:checked').value;
+  let useInternalModel = false;
   if (compute === "local") {
     const found = document.querySelector(".probe-item.found");
     const url = found ? found.getAttribute("data-url") : "http://localhost:1234/v1";
     await api("/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: "model.provider_mode", value: "local" }) });
     await api("/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: "model.base_url", value: url }) });
+  } else if (compute === "builtin") {
+    await api("/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: "model.provider_mode", value: "internal" }) });
+    useInternalModel = true;
   } else {
     const apiUrl = document.getElementById("onboard-api-url").value.trim();
     const apiKey = document.getElementById("onboard-api-key").value.trim();
@@ -503,6 +557,25 @@ async function finishOnboarding() {
   btn.textContent = "Get started";
   onboardingEl.classList.add("hidden");
   await refreshConfig();
+
+  // Post-onboarding: if user chose built-in, prompt to download a model
+  if (useInternalModel) {
+    // Switch to Models view and show model download prompt
+    document.querySelectorAll(".nav-item").forEach((b) => b.classList.remove("active"));
+    const settingsBtn = document.querySelector('.nav-item[data-view="settings"]');
+    if (settingsBtn) settingsBtn.classList.add("active");
+    document.querySelectorAll(".view").forEach((v) => v.classList.remove("active"));
+    document.getElementById("view-settings").classList.add("active");
+    activateSettingsTab("models");
+    _updateBuiltinModeToggle("internal");
+    await loadBuiltinSection();
+
+    showToast(
+      "To get started, download a model in the Models tab. We recommend Llama 3.2 3B (2GB).",
+      "success",
+      8000
+    );
+  }
 }
 
 // ── Config & Indicators ──
@@ -708,6 +781,52 @@ document.addEventListener("click", () => {
   document.getElementById("session-history-list")?.classList.add("hidden");
 });
 
+// ── Tool steps section (non-streaming) ──
+
+function renderToolSteps(toolCalls) {
+  if (!toolCalls || toolCalls.length === 0) return null;
+  const section = document.createElement("div");
+  section.className = "tool-steps";
+
+  const isExpanded = toolCalls.length > 3;
+  const header = document.createElement("div");
+  header.className = "tool-steps-header";
+  header.innerHTML = `<span>⚙ Steps taken (${toolCalls.length})</span>
+    <button class="tool-steps-toggle">${isExpanded ? "collapse" : "expand"}</button>`;
+
+  const body = document.createElement("div");
+  body.className = "tool-steps-body" + (isExpanded ? "" : " hidden");
+
+  toolCalls.forEach((tc, i) => {
+    const name = tc.name || tc.tool_name || "tool";
+    const args = tc.arguments || tc.args || {};
+    const key = Object.values(args)[0] || "";
+    const keyStr = String(key).slice(0, 40);
+    const step = document.createElement("div");
+    step.className = "tool-step";
+    step.innerHTML = `<span class="tool-step-status">✓</span>
+      <span class="tool-step-name">${escapeHtml(name)}</span>
+      ${keyStr ? `<span class="tool-step-arg">${escapeHtml(keyStr)}</span>` : ""}`;
+
+    const argDetails = document.createElement("pre");
+    argDetails.className = "tool-step-args hidden";
+    argDetails.textContent = JSON.stringify(args, null, 2);
+    step.appendChild(argDetails);
+    step.addEventListener("click", () => argDetails.classList.toggle("hidden"));
+    body.appendChild(step);
+  });
+
+  header.querySelector(".tool-steps-toggle").addEventListener("click", (e) => {
+    e.stopPropagation();
+    const hidden = body.classList.toggle("hidden");
+    e.target.textContent = hidden ? "expand" : "collapse";
+  });
+
+  section.appendChild(header);
+  section.appendChild(body);
+  return section;
+}
+
 // ── Chat ──
 
 async function sendMessage() {
@@ -721,31 +840,233 @@ async function sendMessage() {
   setSendingState(true);
   showTypingIndicator();
 
-  try {
-    const r = await api("/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: msg, session_id: currentSessionId }),
-    });
-    const data = await readJsonOrThrow(r);
-    currentSessionId = data.session_id;
-    addMsg("assistant", data.reply);
-    addTimelineEvent("chat", "Reply received");
-    // Save session to history on first message
-    saveSession(data.session_id, msg);
+  streamAbortController = new AbortController();
 
-    if (data.tool_calls) {
-      data.tool_calls.forEach((tc) => {
-        addTimelineEvent("tool_call",
-          `${tc.name || tc.tool_name || "tool"}(${JSON.stringify(tc.arguments || tc.args || {}).slice(0, 80)})`
-        );
-      });
+  try {
+    const response = await fetch(baseUrl + "/chat/stream", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${getToken()}`,
+      },
+      body: JSON.stringify({ message: msg, session_id: currentSessionId }),
+      signal: streamAbortController.signal,
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Request failed (${response.status}): ${text}`);
     }
-    await refreshApprovals();
+
+    // Create streaming assistant bubble
+    removeTypingIndicator();
+    const emptyState = document.getElementById("chat-empty-state");
+    if (emptyState) emptyState.classList.add("hidden");
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "msg-wrapper assistant";
+    const bubble = document.createElement("div");
+    bubble.className = "msg assistant streaming";
+    wrapper.appendChild(bubble);
+
+    // Tool steps container (built incrementally during stream)
+    const stepsContainer = document.createElement("div");
+    stepsContainer.className = "tool-steps";
+    stepsContainer.style.display = "none";
+    const stepsHeader = document.createElement("div");
+    stepsHeader.className = "tool-steps-header";
+    stepsHeader.innerHTML = `<span>⚙ Steps taken (<span class="steps-count">0</span>)</span>
+      <button class="tool-steps-toggle">expand</button>`;
+    const stepsBody = document.createElement("div");
+    stepsBody.className = "tool-steps-body hidden";
+    stepsContainer.appendChild(stepsHeader);
+    stepsContainer.appendChild(stepsBody);
+    stepsHeader.querySelector(".tool-steps-toggle").addEventListener("click", (e) => {
+      e.stopPropagation();
+      const hidden = stepsBody.classList.toggle("hidden");
+      e.target.textContent = hidden ? "expand" : "collapse";
+    });
+
+    // Meta row
+    const meta = document.createElement("div");
+    meta.className = "msg-meta";
+    const ts = document.createElement("span");
+    ts.className = "msg-timestamp";
+    ts.textContent = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    meta.appendChild(ts);
+
+    // Insert stepsContainer before bubble, then bubble, then meta
+    messagesEl.insertBefore(stepsContainer, null);
+    messagesEl.appendChild(stepsContainer);
+    messagesEl.appendChild(wrapper);
+    wrapper.appendChild(meta);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+
+    let fullText = "";
+    let stepCount = 0;
+    let pendingSessionId = currentSessionId;
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const raw = line.slice(6).trim();
+        if (!raw) continue;
+
+        let event;
+        try { event = JSON.parse(raw); } catch (_) { continue; }
+
+        switch (event.type) {
+          case "token":
+            fullText += event.content;
+            bubble.innerHTML = renderMarkdown(fullText);
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+            break;
+
+          case "tool_call": {
+            const name = event.name || "tool";
+            const args = event.args || {};
+            const key = Object.values(args)[0] || "";
+            const keyStr = String(key).slice(0, 40);
+            stepCount++;
+            stepsContainer.style.display = "";
+            stepsContainer.querySelector(".steps-count").textContent = stepCount;
+
+            const step = document.createElement("div");
+            step.className = "tool-step tool-step-running";
+            step.innerHTML = `<span class="tool-step-status">
+                <span class="tool-spinner"></span>
+              </span>
+              <span class="tool-step-name">${escapeHtml(name)}</span>
+              ${keyStr ? `<span class="tool-step-arg">${escapeHtml(keyStr)}</span>` : ""}`;
+            step.dataset.tool = name;
+            stepsBody.appendChild(step);
+
+            addTimelineEvent("tool_call", `${name}(${JSON.stringify(args).slice(0, 80)})`);
+            break;
+          }
+
+          case "tool_result": {
+            const name = event.name || "tool";
+            // Find the running step for this tool
+            const runningStep = stepsBody.querySelector(`.tool-step-running[data-tool="${CSS.escape(name)}"]`);
+            if (runningStep) {
+              runningStep.classList.remove("tool-step-running");
+              runningStep.querySelector(".tool-step-status").innerHTML = "✓";
+              const summary = event.summary || "done";
+              const argDetails = document.createElement("pre");
+              argDetails.className = "tool-step-args hidden";
+              argDetails.textContent = summary;
+              runningStep.appendChild(argDetails);
+              runningStep.style.cursor = "pointer";
+              runningStep.addEventListener("click", () => argDetails.classList.toggle("hidden"));
+            }
+            break;
+          }
+
+          case "approval_required":
+            await refreshApprovals();
+            break;
+
+          case "done":
+            if (event.session_id) {
+              currentSessionId = event.session_id;
+              pendingSessionId = event.session_id;
+            }
+            if (event.pending_approval_id) {
+              await refreshApprovals();
+            }
+            break;
+
+          case "error":
+            showToast(event.message || "Streaming error");
+            addTimelineEvent("error", event.message || "Streaming error");
+            break;
+        }
+      }
+    }
+
+    // Finalize bubble
+    bubble.classList.remove("streaming");
+    if (fullText) {
+      bubble.innerHTML = renderMarkdown(fullText);
+    }
+
+    // Add copy button to meta
+    const copyBtn = document.createElement("button");
+    copyBtn.className = "btn-copy";
+    copyBtn.title = "Copy to clipboard";
+    copyBtn.innerHTML =
+      '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">' +
+      '<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>' +
+      '<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copy';
+    copyBtn.addEventListener("click", () => {
+      navigator.clipboard.writeText(fullText).catch(() => {});
+    });
+    meta.appendChild(copyBtn);
+
+    if (pendingSessionId) saveSession(pendingSessionId, msg);
+    addTimelineEvent("chat", "Reply received");
+
   } catch (err) {
     removeTypingIndicator();
-    showToast(err.message);                          // ← toast, not chat bubble
-    addTimelineEvent("error", err.message);
+    if (err.name !== "AbortError") {
+      // Fall back to non-streaming on error
+      try {
+        const r = await api("/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: msg, session_id: currentSessionId }),
+        });
+        const data = await readJsonOrThrow(r);
+        currentSessionId = data.session_id;
+
+        // Render tool steps before reply
+        const wrapper = document.createElement("div");
+        wrapper.className = "msg-wrapper assistant";
+        if (data.tool_calls && data.tool_calls.length > 0) {
+          const stepsEl = renderToolSteps(data.tool_calls);
+          if (stepsEl) wrapper.insertBefore(stepsEl, wrapper.firstChild);
+        }
+        const bubble2 = document.createElement("div");
+        bubble2.className = "msg assistant";
+        bubble2.innerHTML = renderMarkdown(data.reply);
+        wrapper.appendChild(bubble2);
+        const meta2 = document.createElement("div");
+        meta2.className = "msg-meta";
+        const ts2 = document.createElement("span");
+        ts2.className = "msg-timestamp";
+        ts2.textContent = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+        meta2.appendChild(ts2);
+        wrapper.appendChild(meta2);
+        messagesEl.appendChild(wrapper);
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+
+        saveSession(data.session_id, msg);
+        addTimelineEvent("chat", "Reply received (non-streaming)");
+        if (data.tool_calls) {
+          data.tool_calls.forEach((tc) => {
+            addTimelineEvent("tool_call",
+              `${tc.name || "tool"}(${JSON.stringify(tc.arguments || {}).slice(0, 80)})`
+            );
+          });
+        }
+        await refreshApprovals();
+      } catch (fallbackErr) {
+        showToast(fallbackErr.message);
+        addTimelineEvent("error", fallbackErr.message);
+      }
+    }
   } finally {
     setSendingState(false);
   }
@@ -1190,6 +1511,8 @@ async function loadConnectorsView() {
   const connectors = [
     { name: "Filesystem",      desc: "Read and write files in the workspace",                           enabled: c.filesystem_enabled !== false, configPath: "connectors.filesystem_enabled" },
     { name: "Email (IMAP/SMTP)", desc: "Read inbox and send emails (approval required for sending)",   enabled: c.email?.enabled === true,       configPath: "connectors.email.enabled", consent: c.email?.consent_granted },
+    { name: "Browser (Playwright)", desc: "Browse the web and read page content. Requires Chromium (auto-downloaded on first use).", enabled: c.browser_enabled === true, configPath: "connectors.browser_enabled" },
+    { name: "macOS Automation", desc: "Control macOS via AppleScript and take screenshots (macOS only, approval required for actions).", enabled: c.macos_automation_enabled === true, configPath: "connectors.macos_automation_enabled" },
     { name: "Calendar",        desc: "Coming soon",                                                    enabled: false, configPath: null, stub: true },
     { name: "Messaging",       desc: "Coming soon",                                                    enabled: false, configPath: null, stub: true },
   ];
@@ -1298,9 +1621,43 @@ async function loadLogsView() {
 
 document.getElementById("refresh-logs").addEventListener("click", loadLogsView);
 
+// ── Help Panel ──
+
+function setupHelpPanel() {
+  const helpBtn = document.getElementById("help-btn");
+  const helpPanel = document.getElementById("help-panel");
+  const helpClose = document.getElementById("help-panel-close");
+  if (!helpBtn || !helpPanel) return;
+
+  helpBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    helpPanel.classList.toggle("hidden");
+  });
+  if (helpClose) {
+    helpClose.addEventListener("click", () => helpPanel.classList.add("hidden"));
+  }
+
+  // Demo prompt chips in help panel
+  helpPanel.querySelectorAll(".help-demo-chip").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      inputEl.value = chip.getAttribute("data-prompt") || chip.textContent.trim();
+      inputEl.dispatchEvent(new Event("input"));
+      inputEl.focus();
+      helpPanel.classList.add("hidden");
+      // Switch to chat view
+      document.querySelectorAll(".nav-item").forEach((b) => b.classList.remove("active"));
+      const chatBtn = document.querySelector('.nav-item[data-view="chat"]');
+      if (chatBtn) chatBtn.classList.add("active");
+      document.querySelectorAll(".view").forEach((v) => v.classList.remove("active"));
+      document.getElementById("view-chat").classList.add("active");
+    });
+  });
+}
+
 // ── Init ──
 
 setupOnboarding();
+setupHelpPanel();
 
 // Fetch the auth token from the main process exactly once, then start the app.
 window.rovot.getToken().then((tok) => {

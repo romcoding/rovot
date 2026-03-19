@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
@@ -91,6 +92,50 @@ class OpenAICompatProvider:
             resp.raise_for_status()
             data = resp.json()
         return [m["id"] for m in data.get("data") or [] if "id" in m]
+
+    async def chat_stream(
+        self, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None = None
+    ) -> AsyncIterator[str]:
+        """Stream tokens from chat completions endpoint. Yields text delta chunks."""
+        payload: dict[str, Any] = {
+            "messages": messages,
+            "model": await self._model_for_request(),
+            "stream": True,
+        }
+        if tools:
+            payload["tools"] = tools
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            try:
+                async with client.stream(
+                    "POST",
+                    f"{self._base_url}/chat/completions",
+                    json=payload,
+                    headers=self._headers(),
+                ) as response:
+                    response.raise_for_status()
+                    async for line in response.aiter_lines():
+                        if not line.startswith("data: "):
+                            continue
+                        data = line[6:]
+                        if data.strip() == "[DONE]":
+                            return
+                        try:
+                            chunk = json.loads(data)
+                        except json.JSONDecodeError:
+                            continue
+                        delta = chunk.get("choices", [{}])[0].get("delta", {})
+                        content = delta.get("content")
+                        if content:
+                            yield content
+            except httpx.HTTPStatusError as exc:
+                body = exc.response.text[:500] if exc.response is not None else ""
+                raise RuntimeError(
+                    f"{self._base_url}/chat/completions stream returned HTTP {exc.response.status_code}: {body}"
+                ) from exc
+            except httpx.HTTPError as exc:
+                raise RuntimeError(
+                    f"Failed to reach model provider at {self._base_url}: {exc}"
+                ) from exc
 
     def supports_tools(self) -> bool:
         return True

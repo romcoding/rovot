@@ -228,6 +228,7 @@ select {
   overflow: hidden;
 }
 .chat-main {
+  position: relative;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -1198,3 +1199,139 @@ select {
   0%, 100% { box-shadow: 0 0 0 0 rgba(255,59,48,0.3); }
   50%       { box-shadow: 0 0 0 5px rgba(255,59,48,0); }
 }
+
+/* ── Tool steps (Steps taken section) ── */
+.tool-steps {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  margin-bottom: 6px;
+  overflow: hidden;
+  font-size: 12px;
+}
+.tool-steps-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  user-select: none;
+}
+.tool-steps-header span { font-weight: 500; }
+.tool-steps-toggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 11px;
+  padding: 0;
+}
+.tool-steps-body { padding: 4px 0 6px; }
+.tool-steps-body.hidden { display: none; }
+.tool-step {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+.tool-step:hover { background: var(--bg-tertiary); }
+.tool-step-status { color: var(--success); font-size: 13px; min-width: 14px; }
+.tool-step-name { font-weight: 500; color: var(--text); }
+.tool-step-arg { color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
+.tool-step-args {
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+  padding: 6px 8px;
+  margin: 4px 10px 2px;
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 120px;
+  overflow-y: auto;
+  font-family: monospace;
+}
+.tool-step-running .tool-step-status { color: var(--text-muted); }
+
+/* ── Tool spinner ── */
+.tool-spinner {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Streaming bubble cursor ── */
+.msg.streaming::after {
+  content: "▋";
+  animation: blink 0.8s step-end infinite;
+  color: var(--accent);
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+/* ── Stop button ── */
+#send.btn-stop {
+  background: var(--danger);
+  border-color: var(--danger);
+}
+#send.btn-stop:hover { opacity: 0.85; }
+
+/* ── Chat header right ── */
+.chat-header-right { margin-left: auto; }
+#help-btn { font-weight: 700; }
+
+/* ── Help panel ── */
+.help-panel {
+  position: absolute;
+  top: 48px;
+  right: 12px;
+  width: 320px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  z-index: 100;
+  padding: 12px 14px;
+}
+.help-panel.hidden { display: none; }
+.help-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.help-capability-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-size: 13px;
+}
+.help-capability-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border-light);
+  color: var(--text);
+}
+.help-capability-list li:last-child { border-bottom: none; }
+.help-demo-chip {
+  margin-left: auto;
+  background: var(--accent-subtle);
+  color: var(--accent);
+  border: none;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.help-demo-chip:hover { opacity: 0.8; }
+
+/* ── Builtin onboard note ── */
+#builtin-onboard-note { margin: 8px 0; }
