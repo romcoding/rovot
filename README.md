@@ -16,6 +16,8 @@ Prereqs: Python 3.11+
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
+# Required for browser connector:
+playwright install chromium
 rovot onboard
 rovot start
 ```

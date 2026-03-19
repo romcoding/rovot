@@ -64,7 +64,13 @@ class BrowserConnector:
         if self._page is not None:
             return self._page
 
-        from playwright.async_api import async_playwright  # type: ignore[import]
+        try:
+            from playwright.async_api import async_playwright  # type: ignore[import]
+        except ImportError as exc:
+            raise ImportError(
+                "Browser connector requires Playwright with Chromium. "
+                "Install with: pip install playwright && playwright install chromium"
+            ) from exc
 
         self._playwright = await async_playwright().start()
         if self.user_data_dir:
