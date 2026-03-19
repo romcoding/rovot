@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from rovot.config import AppConfig
+from rovot.connectors.browser import BrowserConnector
 from rovot.connectors.email_imap_smtp import EmailConnector
 from rovot.connectors.filesystem import FileSystemConnector
 from rovot.secrets import SecretsStore
@@ -13,10 +14,12 @@ from rovot.secrets import SecretsStore
 class LoadedConnectors:
     fs: FileSystemConnector
     email: EmailConnector | None
+    browser: BrowserConnector | None
 
 
 def load_connectors(cfg: AppConfig, workspace: Path, secrets: SecretsStore) -> LoadedConnectors:
     fs = FileSystemConnector(workspace=workspace)
+
     email_conn: EmailConnector | None = None
     if cfg.connectors.email.enabled:
         pw = secrets.get(cfg.connectors.email.password_secret) or ""
@@ -31,4 +34,9 @@ def load_connectors(cfg: AppConfig, workspace: Path, secrets: SecretsStore) -> L
             smtp_from=cfg.connectors.email.smtp_from,
             allow_from=cfg.connectors.email.allow_from,
         )
-    return LoadedConnectors(fs=fs, email=email_conn)
+
+    browser_conn: BrowserConnector | None = None
+    if cfg.connectors.browser_enabled:
+        browser_conn = BrowserConnector(headless=True)
+
+    return LoadedConnectors(fs=fs, email=email_conn, browser=browser_conn)

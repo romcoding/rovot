@@ -1,16 +1,22 @@
 from __future__ import annotations
 
+import json
+import logging
+from collections.abc import AsyncIterator
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from rovot.agent.context import ContextBuilder, Message
+from rovot.agent.context import ContextBuilder, Message, estimate_tokens
 from rovot.agent.loop import AgentLoop
 from rovot.agent.sessions import SessionStore
+from rovot.agent.tools.builtin_browser import register_browser_tools
 from rovot.agent.tools.builtin_email import register_email_tools
 from rovot.agent.tools.builtin_exec import ExecConfig, register_exec_tool
 from rovot.agent.tools.builtin_fs import register_fs_tools
+from rovot.agent.tools.builtin_macos import register_macos_tools
 from rovot.agent.tools.builtin_web import register_web_tools
 from rovot.agent.tools.registry import ToolRegistry
 from rovot.connectors.loader import load_connectors
@@ -19,6 +25,8 @@ from rovot.policy.engine import AuthContext
 from rovot.providers.openai_compat import OpenAICompatProvider
 from rovot.providers.router import ProviderRouter
 from rovot.server.deps import AppState, get_auth_ctx, get_state
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["chat"])
 
@@ -38,6 +46,13 @@ class ChatResponse(BaseModel):
     session_id: str
     tool_calls: list[dict[str, Any]] = []
     pending_approval_id: str | None = None
+
+
+class SessionStatsResponse(BaseModel):
+    session_id: str
+    message_count: int
+    estimated_tokens: int
+    trimmed: bool
 
 
 def _build_agent(state: AppState) -> AgentLoop:
@@ -78,10 +93,15 @@ def _build_agent(state: AppState) -> AgentLoop:
         tools, ExecConfig(workspace=settings.workspace_dir, security_mode=cfg.security_mode.value)
     )
     register_email_tools(tools, connectors.email)
+    register_browser_tools(tools, connectors.browser)
+    register_macos_tools(tools, enabled=cfg.connectors.macos_automation_enabled)
     return AgentLoop(
         provider=provider,
         tools=tools,
-        ctx_builder=ContextBuilder(),
+        ctx_builder=ContextBuilder(
+            workspace_dir=settings.workspace_dir,
+            max_context_messages=cfg.max_context_messages,
+        ),
         max_iterations=cfg.max_iterations,
     )
 
@@ -120,6 +140,71 @@ async def chat(
         session_id=session.id,
         tool_calls=resp.tool_calls,
         pending_approval_id=resp.pending_approval_id,
+    )
+
+
+@router.post("/chat/stream")
+async def chat_stream(
+    req: ChatRequest,
+    auth: AuthContext = Depends(get_auth_ctx),
+    state: AppState = Depends(get_state),
+) -> StreamingResponse:
+    """Stream chat response as Server-Sent Events."""
+    settings = state.settings
+    store = SessionStore(root=settings.data_dir / "sessions")
+    session = store.create() if not req.session_id else store.get(req.session_id)
+    history = session.read_all()
+    history.append(Message(role="user", content=req.message))
+    session.append(Message(role="user", content=req.message))
+    agent = _build_agent(state)
+
+    async def event_generator() -> AsyncIterator[str]:
+        full_reply = ""
+        pending_approval_id: str | None = None
+        tool_calls: list[dict[str, Any]] = []
+        try:
+            async for event in agent.stream(auth=auth, session_id=session.id, history=history):
+                event_type = event.get("type")
+                if event_type == "token":
+                    full_reply += event["content"]
+                elif event_type == "tool_call":
+                    tool_calls.append(
+                        {"name": event.get("name", ""), "arguments": event.get("args", {})}
+                    )
+                elif event_type == "approval_required":
+                    pending_approval_id = event.get("approval_id")
+                elif event_type == "done":
+                    pending_approval_id = event.get("pending_approval_id")
+                    tool_calls = event.get("tool_calls", tool_calls)
+
+                data = json.dumps(event)
+                yield f"data: {data}\n\n"
+
+            # Persist the assistant reply
+            if full_reply:
+                session.append(Message(role="assistant", content=full_reply))
+
+            if state.audit:
+                state.audit.log(
+                    "chat.turn",
+                    {"session_id": session.id, "pending": bool(pending_approval_id), "stream": True},
+                )
+            await state.ws.broadcast(
+                "chat.reply",
+                {"session_id": session.id, "pending_approval_id": pending_approval_id},
+            )
+        except Exception as exc:
+            logger.exception("Error during streaming chat: %s", exc)
+            error_data = json.dumps({"type": "error", "message": str(exc)})
+            yield f"data: {error_data}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 
@@ -173,4 +258,26 @@ async def chat_continue(
         session_id=session.id,
         tool_calls=resp.tool_calls,
         pending_approval_id=resp.pending_approval_id,
+    )
+
+
+@router.get("/sessions/{session_id}/stats", response_model=SessionStatsResponse)
+async def session_stats(
+    session_id: str,
+    auth: AuthContext = Depends(get_auth_ctx),
+    state: AppState = Depends(get_state),
+) -> SessionStatsResponse:
+    """Return message count and estimated token usage for a session."""
+    settings = state.settings
+    store = SessionStore(root=settings.data_dir / "sessions")
+    session = store.get(session_id)
+    history = session.read_all()
+    cfg = state.config_store.config
+    max_msgs = cfg.max_context_messages
+    trimmed = len(history) > max_msgs
+    return SessionStatsResponse(
+        session_id=session_id,
+        message_count=len(history),
+        estimated_tokens=estimate_tokens(history),
+        trimmed=trimmed,
     )

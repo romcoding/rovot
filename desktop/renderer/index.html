@@ -46,10 +46,18 @@
               <span>Use a model server on your machine (LM Studio, Ollama, vLLM).</span>
             </label>
             <label class="option-card">
+              <input type="radio" name="compute" value="builtin" />
+              <strong>Built-in model (no server needed)</strong>
+              <span>Run a model directly inside Rovot — no extra software required.</span>
+            </label>
+            <label class="option-card">
               <input type="radio" name="compute" value="api" />
               <strong>Remote API key</strong>
               <span>Use a cloud-hosted OpenAI-compatible endpoint.</span>
             </label>
+          </div>
+          <div id="builtin-onboard-note" class="info-box hidden">
+            You'll download a model after setup (2–5 GB). We recommend Llama 3.2 3B (2 GB).
           </div>
           <div id="api-key-section" class="hidden">
             <label>API base URL
@@ -184,6 +192,37 @@
                     </button>
                     <div id="session-history-list" class="session-dropdown hidden"></div>
                   </div>
+                  <div class="chat-header-right">
+                    <button id="help-btn" class="btn secondary btn-sm" title="What can Rovot do?">?</button>
+                  </div>
+                </div>
+
+                <!-- Help panel (slide-in) -->
+                <div id="help-panel" class="help-panel hidden">
+                  <div class="help-panel-header">
+                    <strong>What can Rovot do?</strong>
+                    <button id="help-panel-close" class="btn icon btn-sm">✕</button>
+                  </div>
+                  <ul class="help-capability-list">
+                    <li>✓ Read/write files in your workspace
+                      <button class="help-demo-chip" data-prompt="What files are in my workspace?">Try it</button>
+                    </li>
+                    <li>✓ Execute shell commands (with your approval)
+                      <button class="help-demo-chip" data-prompt="Run `ls -la` in my workspace">Try it</button>
+                    </li>
+                    <li>✓ Browse the web (Playwright required)
+                      <button class="help-demo-chip" data-prompt="Search the web for the latest Python release">Try it</button>
+                    </li>
+                    <li>✓ Read/send emails (configure in Connectors)
+                      <button class="help-demo-chip" data-prompt="Show my recent emails">Try it</button>
+                    </li>
+                    <li>✓ macOS automation via AppleScript (macOS only)
+                      <button class="help-demo-chip" data-prompt="What app is currently in focus?">Try it</button>
+                    </li>
+                    <li>✓ Take screenshots
+                      <button class="help-demo-chip" data-prompt="Take a screenshot of my screen">Try it</button>
+                    </li>
+                  </ul>
                 </div>
 
                 <!-- Message list — empty state lives inside so it scrolls with messages -->
