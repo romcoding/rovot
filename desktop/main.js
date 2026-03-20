@@ -38,6 +38,45 @@ function waitForHealth(port, attempts = 40) {
   });
 }
 
+function readHealth(port, timeoutMs = 1500) {
+  return new Promise((resolve) => {
+    const req = http.get(`http://127.0.0.1:${port}/health`, (res) => {
+      let body = "";
+      res.on("data", (chunk) => {
+        body += chunk.toString();
+      });
+      res.on("end", () => {
+        try {
+          resolve({ statusCode: res.statusCode || 0, json: JSON.parse(body) });
+        } catch (_) {
+          resolve({ statusCode: res.statusCode || 0, json: null });
+        }
+      });
+    });
+    req.setTimeout(timeoutMs, () => {
+      req.destroy();
+      resolve({ statusCode: 0, json: null });
+    });
+    req.on("error", () => resolve({ statusCode: 0, json: null }));
+  });
+}
+
+function killProcessOnPort(port) {
+  if (process.platform === "win32") return;
+  const pids = spawnSync("lsof", ["-ti", `tcp:${port}`], { encoding: "utf-8" });
+  if (pids.status !== 0 || !pids.stdout) return;
+  pids.stdout
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .forEach((pid) => {
+      const killed = spawnSync("kill", ["-TERM", pid]);
+      if (killed.status === 0) {
+        console.log(`Stopped existing daemon on port ${port} (pid ${pid}).`);
+      }
+    });
+}
+
 function resolveDaemonBinary() {
   if (app.isPackaged) {
     const ext = process.platform === "win32" ? ".exe" : "";
@@ -98,8 +137,23 @@ async function startDaemon() {
   const port = 18789;
   try {
     await waitForHealth(port, 2);
-    console.log("Daemon already running on port", port);
-    return;
+    const existing = await readHealth(port, 1500);
+    const isExpectedDaemon =
+      existing.statusCode === 200 &&
+      existing.json &&
+      existing.json.status === "ok" &&
+      existing.json.daemon_session &&
+      existing.json.secret_stats;
+    if (isExpectedDaemon) {
+      console.log("Daemon already running on port", port);
+      return;
+    }
+
+    // A stale/unknown process is already bound to the port. Replace it so the
+    // desktop app always uses the bundled daemon with current keychain fixes.
+    console.log("Existing process on daemon port looks stale; replacing it.");
+    killProcessOnPort(port);
+    await new Promise((resolve) => setTimeout(resolve, 400));
   } catch (_) {}
 
   const bin = resolveDaemonBinary();

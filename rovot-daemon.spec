@@ -1,49 +1,21 @@
 # -*- mode: python ; coding: utf-8 -*-
-import glob as _glob
-import os
-import sys
-
 from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.hooks import collect_all
 
-hiddenimports = ['uvicorn.logging', 'uvicorn.loops.auto', 'uvicorn.protocols.http.auto', 'uvicorn.protocols.http.h11_impl', 'uvicorn.protocols.websockets.auto', 'uvicorn.protocols.websockets.wsproto_impl', 'uvicorn.lifespan.on', 'multipart']
+datas = [('/Users/romanhess/Coding/2026/rovot/.venv/lib/python3.13/site-packages/playwright/driver', 'playwright/driver')]
+binaries = []
+hiddenimports = ['uvicorn.logging', 'uvicorn.loops.auto', 'uvicorn.protocols.http.auto', 'uvicorn.protocols.http.h11_impl', 'uvicorn.protocols.websockets.auto', 'uvicorn.protocols.websockets.wsproto_impl', 'uvicorn.lifespan.on', 'multipart', 'playwright', 'playwright.async_api']
 hiddenimports += collect_submodules('pydantic')
 hiddenimports += collect_submodules('keyring')
-hiddenimports += ['llama_cpp']
-hiddenimports += ['playwright', 'playwright.async_api', 'playwright.sync_api']
-
-import subprocess as _sp
-try:
-    _pw_driver = _sp.check_output(
-        [sys.executable, '-c',
-         'import playwright, os; print(os.path.join(os.path.dirname(playwright.__file__), "driver"))'],
-        text=True
-    ).strip()
-    if os.path.isdir(_pw_driver):
-        _pw_datas = [(_pw_driver, 'playwright/driver')]
-    else:
-        _pw_datas = []
-except Exception:
-    _pw_datas = []
-
-# Bundle llama-cpp-python shared libraries so the packaged binary can load them.
-_llama_binaries = []
-for _pattern in [
-    'llama_cpp/lib/libllama.dylib',   # macOS
-    'llama_cpp/lib/libllama.so',      # Linux
-    'llama_cpp/lib/libllama.dll',     # Windows
-    'llama_cpp/lib/libggml*.dylib',
-    'llama_cpp/lib/libggml*.so',
-]:
-    for _sp in sys.path:
-        for _m in _glob.glob(os.path.join(_sp, _pattern)):
-            _llama_binaries.append((_m, 'llama_cpp/lib'))
+tmp_ret = collect_all('playwright')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 
 a = Analysis(
     ['/Users/romanhess/Coding/2026/rovot/src/rovot/cli.py'],
     pathex=['/Users/romanhess/Coding/2026/rovot/src'],
-    binaries=_llama_binaries,
-    datas=_pw_datas,
+    binaries=binaries,
+    datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
