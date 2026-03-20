@@ -1311,19 +1311,263 @@ function _updateBuiltinModeToggle(mode) {
   document.getElementById("builtin-models-section").classList.toggle("hidden", mode !== "internal");
 }
 
+// ── llama-cpp-python install guide ──────────────────────────────────────────
+// Call this once when entering Built-in Models mode.
+async function checkLlamaCppStatus() {
+  const section = document.getElementById("builtin-models-section");
+  const existing = document.getElementById("llama-cpp-banner");
+  if (existing) existing.remove();
+
+  try {
+    const r = await api("/models/internal/status");
+    const data = await r.json();
+    if (data.installed) return; // nothing to show
+
+    const banner = document.createElement("div");
+    banner.id = "llama-cpp-banner";
+    banner.className = "llama-cpp-banner";
+    const isAppleSilicon = data.is_apple_silicon;
+    const cmd = data.install_cmd || "pip install llama-cpp-python";
+    banner.innerHTML = `
+      <div class="llama-cpp-banner-icon">⚠</div>
+      <div class="llama-cpp-banner-body">
+        <strong>llama-cpp-python not installed</strong>
+        <p>Built-in inference requires llama-cpp-python.
+        ${isAppleSilicon ? "You're on Apple Silicon — use the Metal build for GPU acceleration:" : "Install with pip:"}</p>
+        <div class="llama-cpp-cmd-wrap">
+          <code id="llama-install-cmd">${escapeHtml(cmd)}</code>
+          <button class="btn secondary btn-sm" onclick="copyInstallCmd()">Copy</button>
+        </div>
+        ${isAppleSilicon ? `<p class="settings-desc" style="margin-top:6px">The Metal build offloads model layers to the Apple GPU, making inference 4-10× faster and using unified memory efficiently.</p>` : ""}
+      </div>`;
+    section.insertBefore(banner, section.firstChild);
+  } catch (_) {}
+}
+
+function copyInstallCmd() {
+  const cmd = document.getElementById("llama-install-cmd")?.textContent || "";
+  navigator.clipboard.writeText(cmd).then(() => showToast("Copied install command.", "success", 2000));
+}
+
+window.copyInstallCmd = copyInstallCmd;
+
+// ── Catalog tabs: Static / Scan / Search ────────────────────────────────────
+let _catalogTab = "static";
+
+function setupCatalogTabs() {
+  const container = document.getElementById("catalog-tab-container");
+  if (!container || container.dataset.initialized) return;
+  container.dataset.initialized = "true";
+
+  container.querySelectorAll(".catalog-tab-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      container.querySelectorAll(".catalog-tab-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      _catalogTab = btn.dataset.tab;
+      if (_catalogTab === "static") loadStaticCatalog();
+      if (_catalogTab === "scan") loadScanCatalog();
+      if (_catalogTab === "search") focusCatalogSearch();
+    });
+  });
+}
+
+async function loadStaticCatalog() {
+  const el = document.getElementById("builtin-catalog-list");
+  el.innerHTML = '<div class="info-box">Loading catalog…</div>';
+  try {
+    const r = await api("/models/internal/catalog");
+    const catalog = await r.json();
+    renderCatalogCards(catalog, el);
+  } catch (_) {
+    el.innerHTML = '<div class="info-box">Could not load catalog.</div>';
+  }
+}
+
+async function loadScanCatalog() {
+  const el = document.getElementById("builtin-catalog-list");
+  el.innerHTML = '<div class="info-box"><span class="status-spinner" style="display:inline-block;width:14px;height:14px;margin-right:8px;vertical-align:middle"></span>Scanning HuggingFace for latest models…</div>';
+  try {
+    const r = await api("/models/internal/catalog/scan");
+    const data = await r.json();
+    if (!data.models || data.models.length === 0) {
+      el.innerHTML = '<div class="info-box">No results returned from HuggingFace. Check your internet connection.</div>';
+      return;
+    }
+    renderCatalogCards(data.models, el);
+    const note = document.createElement("p");
+    note.className = "settings-desc";
+    note.style.marginTop = "10px";
+    note.textContent = `Scanned ${data.scanned_repos} repos · found ${data.found} GGUF models`;
+    el.appendChild(note);
+  } catch (_) {
+    el.innerHTML = '<div class="info-box">Scan failed. Check your internet connection.</div>';
+  }
+}
+
+function focusCatalogSearch() {
+  const el = document.getElementById("builtin-catalog-list");
+  el.innerHTML = `
+    <div class="catalog-search-bar">
+      <input id="catalog-search-input" type="text" placeholder="Search HuggingFace for GGUF models…" style="flex:1;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg);color:var(--text);font-size:14px;outline:none;" />
+      <button class="btn secondary" id="catalog-search-btn">Search</button>
+    </div>
+    <div id="catalog-search-results" style="margin-top:10px"></div>`;
+
+  const input = document.getElementById("catalog-search-input");
+  const btn = document.getElementById("catalog-search-btn");
+  const resultsEl = document.getElementById("catalog-search-results");
+
+  const doSearch = async () => {
+    const q = input.value.trim();
+    if (!q) return;
+    resultsEl.innerHTML = '<div class="info-box"><span class="status-spinner" style="display:inline-block;width:14px;height:14px;margin-right:8px;vertical-align:middle"></span>Searching…</div>';
+    try {
+      const r = await api("/models/internal/catalog/search?q=" + encodeURIComponent(q));
+      const data = await r.json();
+      if (!data.models || data.models.length === 0) {
+        resultsEl.innerHTML = '<div class="info-box">No GGUF models found for that query.</div>';
+        return;
+      }
+      // Enrich with size placeholders for search results
+      const enriched = data.models.map(m => ({
+        ...m,
+        name: m.name,
+        size_gb: null,
+        ram_required_gb: null,
+        description: `${m.downloads?.toLocaleString() || "?"} downloads · ${m.likes || 0} likes`,
+        hf_url: m.hf_url,
+        filename: m.filename,
+      }));
+      renderCatalogCards(enriched, resultsEl);
+    } catch (_) {
+      resultsEl.innerHTML = '<div class="info-box">Search failed. Try again.</div>';
+    }
+  };
+
+  btn.addEventListener("click", doSearch);
+  input.addEventListener("keydown", e => { if (e.key === "Enter") doSearch(); });
+  input.focus();
+}
+
+function renderCatalogCards(items, container) {
+  // Get locally downloaded filenames for cross-checking
+  const downloaded = new Set();
+  api("/models/internal/available").then(r => r.json()).then(d => {
+    (d.models || []).forEach(f => downloaded.add(f));
+    container.innerHTML = "";
+    items.forEach(item => {
+      const isDownloaded = item.downloaded || downloaded.has(item.filename);
+      const card = document.createElement("div");
+      card.className = "catalog-card";
+
+      const metaParts = [];
+      if (item.size_gb) metaParts.push(`${item.size_gb} GB`);
+      if (item.ram_required_gb) metaParts.push(`${item.ram_required_gb} GB RAM`);
+      const metaStr = metaParts.join(" · ");
+
+      card.innerHTML = `
+        <div class="catalog-info">
+          <strong>${escapeHtml(item.name)}</strong>
+          ${isDownloaded ? '<span class="badge badge-green">Downloaded</span>' : ""}
+          ${metaStr ? `<span class="catalog-meta">${escapeHtml(metaStr)}</span>` : ""}
+          <span class="catalog-desc">${escapeHtml(item.description || "")}</span>
+        </div>
+        <div class="catalog-action">
+          ${isDownloaded
+            ? `<button class="btn primary btn-sm catalog-load-btn" data-filename="${escapeHtml(item.filename)}">Load</button>`
+            : `<button class="btn secondary btn-sm catalog-dl-btn" data-filename="${escapeHtml(item.filename)}" data-url="${escapeHtml(item.hf_url)}">Download</button>`}
+          <div class="catalog-progress hidden" id="progress-${escapeHtml(item.filename)}">
+            <div class="progress-bar"><div class="progress-fill" style="width:0%"></div></div>
+            <span class="progress-label">0%</span>
+          </div>
+        </div>`;
+
+      const dlBtn = card.querySelector(".catalog-dl-btn");
+      if (dlBtn) {
+        dlBtn.addEventListener("click", async () => {
+          dlBtn.disabled = true;
+          dlBtn.textContent = "Downloading…";
+          const progressBox = card.querySelector(`#progress-${CSS.escape(item.filename)}`);
+          if (progressBox) progressBox.classList.remove("hidden");
+          await api("/models/internal/download", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ filename: item.filename, hf_url: item.hf_url }),
+          });
+        });
+      }
+
+      const loadBtn = card.querySelector(".catalog-load-btn");
+      if (loadBtn) {
+        loadBtn.addEventListener("click", () => _loadModel(item.filename, loadBtn));
+      }
+
+      container.appendChild(card);
+    });
+  }).catch(() => {
+    // If available check fails, just render without cross-check
+    container.innerHTML = "";
+    items.forEach(item => {
+      const isDownloaded = item.downloaded;
+      const card = document.createElement("div");
+      card.className = "catalog-card";
+      card.innerHTML = `<div class="catalog-info"><strong>${escapeHtml(item.name)}</strong></div>
+        <div class="catalog-action">
+          ${isDownloaded
+            ? `<button class="btn primary btn-sm catalog-load-btn" data-filename="${escapeHtml(item.filename)}">Load</button>`
+            : `<button class="btn secondary btn-sm">Download</button>`}
+        </div>`;
+      container.appendChild(card);
+    });
+  });
+}
+
+async function _loadModel(filename, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = "Loading…"; }
+  const r = await api("/models/internal/load", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model_filename: filename }),
+  });
+  if (!r.ok) {
+    const data = await r.json();
+    const detail = data.detail || {};
+    if (detail.error_type === "llama_cpp_not_installed" || (typeof detail === "object" && detail.install_cmd)) {
+      // Show the banner and a toast with the install command
+      showToast(`llama-cpp-python not installed. Run: ${detail.install_cmd}`, "error", 10000);
+      await checkLlamaCppStatus(); // refresh the banner
+    } else {
+      showToast(detail.message || detail || "Failed to start model load.", "error");
+    }
+    if (btn) { btn.disabled = false; btn.textContent = "Load"; }
+    return;
+  }
+  document.getElementById("builtin-loaded-status").innerHTML =
+    '<span class="status-spinner" style="display:inline-block;width:14px;height:14px;margin-right:6px"></span>Loading model…';
+  await api("/config", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path: "model.provider_mode", value: "internal" }),
+  });
+  await refreshConfig();
+}
+
+// ── Revised loadBuiltinSection ───────────────────────────────────────────────
 async function loadBuiltinSection() {
+  await checkLlamaCppStatus();
+
   // Loaded model status
   const statusEl = document.getElementById("builtin-loaded-status");
   try {
     const r = await api("/models/internal/loaded");
     const data = await r.json();
     if (data.loading) {
-      statusEl.innerHTML = '<span class="status-spinner" style="display:inline-block;width:14px;height:14px;margin-right:6px"></span>Loading model...';
+      statusEl.innerHTML = '<span class="status-spinner" style="display:inline-block;width:14px;height:14px;margin-right:6px"></span>Loading model…';
     } else if (data.loaded) {
       statusEl.innerHTML = `<strong>${escapeHtml(data.loaded)}</strong> loaded &nbsp;
         <button class="btn danger btn-sm" id="unload-model-btn">Unload</button>`;
       document.getElementById("unload-model-btn").addEventListener("click", async () => {
-        await api("/models/internal/unload", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` } });
+        await api("/models/internal/unload", { method: "POST", headers: { "Content-Type": "application/json" } });
         await loadBuiltinSection();
         await refreshConfig();
       });
@@ -1334,7 +1578,7 @@ async function loadBuiltinSection() {
     statusEl.textContent = "Built-in inference unavailable";
   }
 
-  // Available (downloaded) models
+  // Available (downloaded) models list
   const availEl = document.getElementById("builtin-available-list");
   availEl.innerHTML = "";
   try {
@@ -1344,99 +1588,22 @@ async function loadBuiltinSection() {
     if (models.length === 0) {
       availEl.innerHTML = '<div class="info-box">No models downloaded yet. Use the catalog below.</div>';
     } else {
-      models.forEach((filename) => {
+      models.forEach(filename => {
         const el = document.createElement("div");
         el.className = "probe-item found";
         el.innerHTML = `<span class="probe-label">${escapeHtml(filename)}</span>
           <button class="btn primary btn-sm" data-filename="${escapeHtml(filename)}">Load</button>`;
-        el.querySelector("button").addEventListener("click", async () => {
-          el.querySelector("button").disabled = true;
-          el.querySelector("button").textContent = "Loading...";
-          await api("/models/internal/load", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
-            body: JSON.stringify({ model_filename: filename }),
-          });
-          document.getElementById("builtin-loaded-status").innerHTML =
-            '<span class="status-spinner" style="display:inline-block;width:14px;height:14px;margin-right:6px"></span>Loading model...';
-          await api("/config", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
-            body: JSON.stringify({ path: "model.provider_mode", value: "internal" }),
-          });
-          await refreshConfig();
-        });
+        el.querySelector("button").addEventListener("click", () =>
+          _loadModel(filename, el.querySelector("button"))
+        );
         availEl.appendChild(el);
       });
     }
   } catch (_) {}
 
-  // Catalog
-  const catalogEl = document.getElementById("builtin-catalog-list");
-  catalogEl.innerHTML = "";
-  try {
-    const r3 = await api("/models/internal/catalog");
-    const catalog = await r3.json();
-    catalog.forEach((item) => {
-      const card = document.createElement("div");
-      card.className = "catalog-card";
-      card.innerHTML = `
-        <div class="catalog-info">
-          <strong>${escapeHtml(item.name)}</strong>
-          ${item.downloaded ? '<span class="badge badge-green">Downloaded</span>' : ""}
-          <span class="catalog-meta">${item.size_gb} GB &bull; ${item.ram_required_gb} GB RAM</span>
-          <span class="catalog-desc">${escapeHtml(item.description)}</span>
-        </div>
-        <div class="catalog-action">
-          ${item.downloaded
-            ? `<button class="btn primary btn-sm catalog-load-btn" data-filename="${escapeHtml(item.filename)}">Load</button>`
-            : `<button class="btn secondary btn-sm catalog-dl-btn" data-filename="${escapeHtml(item.filename)}" data-url="${escapeHtml(item.hf_url)}">Download</button>`}
-          <div class="catalog-progress hidden" id="progress-${escapeHtml(item.filename)}">
-            <div class="progress-bar"><div class="progress-fill" style="width:0%"></div></div>
-            <span class="progress-label">0%</span>
-          </div>
-        </div>
-      `;
-
-      const dlBtn = card.querySelector(".catalog-dl-btn");
-      if (dlBtn) {
-        dlBtn.addEventListener("click", async () => {
-          dlBtn.disabled = true;
-          dlBtn.textContent = "Downloading...";
-          const progressBox = card.querySelector(`#progress-${CSS.escape(item.filename)}`);
-          if (progressBox) progressBox.classList.remove("hidden");
-          await api("/models/internal/download", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
-            body: JSON.stringify({ filename: item.filename, hf_url: item.hf_url }),
-          });
-        });
-      }
-
-      const loadBtn = card.querySelector(".catalog-load-btn");
-      if (loadBtn) {
-        loadBtn.addEventListener("click", async () => {
-          loadBtn.disabled = true;
-          loadBtn.textContent = "Loading...";
-          await api("/models/internal/load", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
-            body: JSON.stringify({ model_filename: item.filename }),
-          });
-          document.getElementById("builtin-loaded-status").innerHTML =
-            '<span class="status-spinner" style="display:inline-block;width:14px;height:14px;margin-right:6px"></span>Loading model...';
-          await api("/config", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
-            body: JSON.stringify({ path: "model.provider_mode", value: "internal" }),
-          });
-          await refreshConfig();
-        });
-      }
-
-      catalogEl.appendChild(card);
-    });
-  } catch (_) {}
+  // Catalog section with tabs
+  setupCatalogTabs();
+  if (_catalogTab === "static") loadStaticCatalog();
 }
 
 document.getElementById("mode-builtin").addEventListener("click", async () => {

@@ -310,7 +310,16 @@
                       <div class="settings-group">
                         <h3>Model catalog</h3>
                         <p class="settings-desc">Models are downloaded from HuggingFace and stored in <code>~/.rovot/models/</code></p>
-                        <div id="builtin-catalog-list" class="catalog-list"></div>
+                        
+                        <!-- Catalog tabs -->
+                        <div id="catalog-tab-container">
+                          <div class="catalog-tabs">
+                            <button class="catalog-tab-btn active" data-tab="static">Recommended</button>
+                            <button class="catalog-tab-btn" data-tab="scan">Latest from HuggingFace</button>
+                            <button class="catalog-tab-btn" data-tab="search">Search models</button>
+                          </div>
+                          <div id="builtin-catalog-list" class="catalog-list"></div>
+                        </div>
                       </div>
                     </div>
 
