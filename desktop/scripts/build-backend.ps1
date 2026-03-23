@@ -5,7 +5,20 @@ if (Test-Path $out) { Remove-Item -Recurse -Force $out }
 New-Item -ItemType Directory -Force -Path $out | Out-Null
 
 Set-Location $root
-python -m PyInstaller --clean -F -n rovot-daemon -c -p (Join-Path $root "src") (Join-Path $root "src\rovot\cli.py")
+python -m PyInstaller --clean -F -n rovot-daemon -c `
+  -p (Join-Path $root "src") `
+  --hidden-import uvicorn.logging `
+  --hidden-import uvicorn.loops.auto `
+  --hidden-import uvicorn.protocols.http.auto `
+  --hidden-import uvicorn.protocols.http.h11_impl `
+  --hidden-import uvicorn.protocols.websockets.auto `
+  --hidden-import uvicorn.protocols.websockets.wsproto_impl `
+  --hidden-import uvicorn.lifespan.on `
+  --hidden-import multipart `
+  --collect-submodules pydantic `
+  --collect-submodules keyring `
+  --collect-all llama_cpp `
+  (Join-Path $root "src\rovot\cli.py")
 
 Copy-Item (Join-Path $root "dist\rovot-daemon.exe") (Join-Path $out "rovot-daemon.exe") -Force
 Write-Host "Built backend binary -> $out"

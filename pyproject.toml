@@ -15,8 +15,6 @@ dependencies = [
     "httpx>=0.28",
     "python-multipart>=0.0.20",
     "keyring>=25.6",
-    # Install with: CMAKE_ARGS="-DGGML_METAL=on" pip install llama-cpp-python
-    "llama-cpp-python>=0.3.0",
     # Browser automation (run `playwright install chromium` after pip install)
     "playwright>=1.40",
     # Improves browser content extraction quality
@@ -33,6 +31,15 @@ packaging = [
     "pyinstaller>=6.12",
     "playwright>=1.40",
     "trafilatura>=1.6",
+    # Bundled for in-app GGUF inference; build with platform flags before packaging:
+    #   macOS Apple Silicon: CMAKE_ARGS="-DGGML_METAL=on" pip install llama-cpp-python
+    #   CUDA:                CMAKE_ARGS="-DGGML_CUDA=on"  pip install llama-cpp-python
+    #   CPU-only fallback:   pip install llama-cpp-python
+    "llama-cpp-python>=0.3.0",
+]
+# Convenience alias for local dev with built-in inference
+builtin = [
+    "llama-cpp-python>=0.3.0",
 ]
 
 [project.scripts]

@@ -40,6 +40,8 @@ PYINSTALLER_ARGS=(
   --hidden-import playwright.async_api
   --collect-all playwright
   --add-data "$("$PYTHON_BIN" -c 'import playwright, os; print(os.path.join(os.path.dirname(playwright.__file__), "driver"))'):playwright/driver"
+  # Bundle llama-cpp-python so users never need a manual pip install
+  --collect-all llama_cpp
   "$ROOT/src/rovot/cli.py"
 )
 

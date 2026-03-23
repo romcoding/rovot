@@ -1355,42 +1355,65 @@ select {
   margin-top: 4px;
 }
 
-/* ── llama-cpp install banner ──────────────────────────────────────────────── */
-.llama-cpp-banner {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 14px 16px;
-  border: 1px solid var(--warning);
-  background: rgba(255,149,0,0.06);
-  border-radius: var(--radius);
-  margin-bottom: 20px;
+/* ── Engine status bar (subtle, non-blocking info notice) ─────────────────── */
+#engine-status-bar {
+  margin-bottom: 16px;
 }
-.llama-cpp-banner-icon {
-  font-size: 18px;
-  color: var(--warning);
-  flex-shrink: 0;
-  margin-top: 2px;
-}
-.llama-cpp-banner-body { flex: 1; min-width: 0; }
-.llama-cpp-banner-body strong { font-size: 14px; display: block; margin-bottom: 4px; }
-.llama-cpp-banner-body p { font-size: 13px; color: var(--text-secondary); margin-bottom: 8px; }
-.llama-cpp-cmd-wrap {
+.engine-status-notice {
   display: flex;
   align-items: center;
-  gap: 8px;
-  background: var(--bg-tertiary);
+  gap: 10px;
+  padding: 10px 14px;
   border: 1px solid var(--border-light);
-  border-radius: var(--radius-sm);
-  padding: 6px 10px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius);
+  font-size: 13px;
+  color: var(--text-secondary);
 }
-.llama-cpp-cmd-wrap code {
-  font-family: "SF Mono", Monaco, Menlo, monospace;
-  font-size: 12px;
-  color: var(--text);
-  flex: 1;
-  overflow-x: auto;
+.engine-status-icon {
+  font-size: 15px;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+.engine-status-notice span:last-child { margin-left: auto; }
+.engine-status-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 99px;
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  border: 1px solid var(--border-light);
   white-space: nowrap;
+}
+
+/* ── Engine auto-install progress panel ───────────────────────────────────── */
+#engine-install-panel {
+  margin-bottom: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.engine-install-header {
+  padding: 10px 14px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-light);
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+}
+.engine-install-log {
+  margin: 0;
+  padding: 10px 14px;
+  font-family: "SF Mono", Monaco, Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  max-height: 160px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 
 /* ── Catalog tabs (Static / Scan / Search) ─────────────────────────────────── */

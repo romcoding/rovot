@@ -299,6 +299,19 @@
 
                     <!-- ── Built-in models section (visible when mode=internal) ── -->
                     <div id="builtin-models-section" class="hidden">
+
+                      <!-- Inference engine status (non-blocking; only shown when not installed) -->
+                      <div id="engine-status-bar" class="hidden"></div>
+
+                      <!-- Install engine progress panel (shown during auto-install) -->
+                      <div id="engine-install-panel" class="hidden">
+                        <div class="engine-install-header">
+                          <span class="status-spinner" style="display:inline-block;width:14px;height:14px;margin-right:8px;vertical-align:middle"></span>
+                          <strong>Installing inference engine…</strong>
+                        </div>
+                        <pre id="engine-install-log" class="engine-install-log"></pre>
+                      </div>
+
                       <div class="settings-group">
                         <h3>Loaded model</h3>
                         <div id="builtin-loaded-status" class="info-box">No model loaded</div>
@@ -310,12 +323,12 @@
                       <div class="settings-group">
                         <h3>Model catalog</h3>
                         <p class="settings-desc">Models are downloaded from HuggingFace and stored in <code>~/.rovot/models/</code></p>
-                        
-                        <!-- Catalog tabs -->
+
+                        <!-- Catalog tabs — default to "Latest from HuggingFace" for fresh discovery -->
                         <div id="catalog-tab-container">
                           <div class="catalog-tabs">
-                            <button class="catalog-tab-btn active" data-tab="static">Recommended</button>
-                            <button class="catalog-tab-btn" data-tab="scan">Latest from HuggingFace</button>
+                            <button class="catalog-tab-btn" data-tab="static">Recommended</button>
+                            <button class="catalog-tab-btn active" data-tab="scan">Latest from HuggingFace</button>
                             <button class="catalog-tab-btn" data-tab="search">Search models</button>
                           </div>
                           <div id="builtin-catalog-list" class="catalog-list"></div>

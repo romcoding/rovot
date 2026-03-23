@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import platform
+import sys
 from typing import Any
 
 import httpx
@@ -83,20 +85,46 @@ STATIC_CATALOG = [
         "hf_repo": "bartowski/Llama-3.2-1B-Instruct-GGUF",
         "hf_url": "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf",
     },
+    {
+        "name": "Phi-4 Mini (Q4_K_M)",
+        "filename": "phi-4-mini-instruct-q4_k_m.gguf",
+        "size_gb": 2.5,
+        "ram_required_gb": 5,
+        "description": "Microsoft Phi-4 Mini — powerful small model for reasoning.",
+        "hf_repo": "bartowski/Phi-4-mini-instruct-GGUF",
+        "hf_url": "https://huggingface.co/bartowski/Phi-4-mini-instruct-GGUF/resolve/main/Phi-4-mini-instruct-Q4_K_M.gguf",
+    },
+    {
+        "name": "DeepSeek R1 7B (Q4_K_M)",
+        "filename": "deepseek-r1-distill-qwen-7b-q4_k_m.gguf",
+        "size_gb": 4.7,
+        "ram_required_gb": 8,
+        "description": "DeepSeek R1 distilled — strong reasoning with chain-of-thought.",
+        "hf_repo": "bartowski/DeepSeek-R1-Distill-Qwen-7B-GGUF",
+        "hf_url": "https://huggingface.co/bartowski/DeepSeek-R1-Distill-Qwen-7B-GGUF/resolve/main/DeepSeek-R1-Distill-Qwen-7B-Q4_K_M.gguf",
+    },
 ]
 
-# HuggingFace repos to scan for "latest GGUF" discovery
+# HuggingFace repos to scan for "latest GGUF" discovery.
+# Ordered by popularity / recency — shown to the user in this order.
 HF_SCAN_REPOS = [
     "bartowski/Llama-3.2-3B-Instruct-GGUF",
     "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF",
     "bartowski/Llama-3.3-70B-Instruct-GGUF",
     "bartowski/gemma-3-4b-it-GGUF",
     "bartowski/gemma-3-12b-it-GGUF",
+    "bartowski/gemma-3-27b-it-GGUF",
     "bartowski/Mistral-7B-Instruct-v0.3-GGUF",
+    "bartowski/Mistral-Small-3.1-24B-Instruct-2503-GGUF",
     "Qwen/Qwen2.5-7B-Instruct-GGUF",
     "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF",
     "Qwen/Qwen2.5-14B-Instruct-GGUF",
+    "Qwen/Qwen2.5-32B-Instruct-GGUF",
+    "bartowski/Phi-4-mini-instruct-GGUF",
     "microsoft/Phi-4-GGUF",
+    "bartowski/DeepSeek-R1-Distill-Qwen-7B-GGUF",
+    "bartowski/DeepSeek-R1-Distill-Llama-8B-GGUF",
+    "bartowski/Llama-3.2-1B-Instruct-GGUF",
 ]
 
 _Q4_PREFERENCE = ["Q4_K_M", "Q4_K_S", "Q5_K_M", "Q4_0"]
@@ -114,20 +142,6 @@ def _pick_q4_file(files: list[str]) -> str | None:
             return f
     return None
 
-
-async def _fetch_hf_repo_files(repo: str) -> list[str]:
-    """Fetch the file list from a HuggingFace repo (public API, no token needed)."""
-    url = f"https://huggingface.co/api/models/{repo}"
-    try:
-        async with httpx.AsyncClient(timeout=6.0) as client:
-            r = await client.get(url, headers={"Accept": "application/json"})
-            if r.status_code != 200:
-                return []
-            data = r.json()
-            siblings = data.get("siblings") or []
-            return [s["rfilename"] for s in siblings if "rfilename" in s]
-    except Exception:
-        return []
 
 
 def _detect_llama_cpp_status() -> dict[str, Any]:
@@ -175,6 +189,79 @@ async def llama_cpp_status(
 ) -> dict[str, Any]:
     """Return llama-cpp-python installation status and recommended install command."""
     return _detect_llama_cpp_status()
+
+
+@router.post("/install-engine")
+async def install_llama_cpp(
+    auth: AuthContext = Depends(get_auth_ctx),
+    state: AppState = Depends(get_state),
+) -> dict[str, Any]:
+    """
+    Auto-install llama-cpp-python via pip into the current Python environment.
+    Streams progress via WebSocket events:
+      llama_cpp_install_progress  {line: str}
+      llama_cpp_install_complete  {success: bool}
+      llama_cpp_install_error     {error: str}
+    """
+    cpp_status = _detect_llama_cpp_status()
+    if cpp_status["installed"]:
+        return {"status": "already_installed", "version": cpp_status["version"]}
+
+    # Refuse to install inside a frozen PyInstaller bundle — there's no pip.
+    if getattr(sys, "frozen", False):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "cannot_install_in_bundle",
+                "message": (
+                    "The app is running as a packaged binary. "
+                    "Please reinstall Rovot with llama-cpp-python bundled."
+                ),
+            },
+        )
+
+    is_apple_silicon = platform.system() == "Darwin" and platform.machine() == "arm64"
+
+    async def _do_install() -> None:
+        env = os.environ.copy()
+        if is_apple_silicon:
+            env["CMAKE_ARGS"] = "-DGGML_METAL=on"
+
+        cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "llama-cpp-python"]
+        try:
+            await state.ws.broadcast(
+                "llama_cpp_install_progress",
+                {"line": "Starting llama-cpp-python installation…"},
+            )
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+                env=env,
+            )
+            assert proc.stdout is not None
+            async for raw in proc.stdout:
+                line = raw.decode(errors="replace").rstrip()
+                if line:
+                    await state.ws.broadcast("llama_cpp_install_progress", {"line": line})
+            await proc.wait()
+            if proc.returncode == 0:
+                await state.ws.broadcast(
+                    "llama_cpp_install_complete", {"success": True}
+                )
+            else:
+                await state.ws.broadcast(
+                    "llama_cpp_install_error",
+                    {"error": f"pip exited with code {proc.returncode}"},
+                )
+        except Exception as exc:
+            logger.exception("llama-cpp-python auto-install failed")
+            await state.ws.broadcast(
+                "llama_cpp_install_error", {"error": str(exc)}
+            )
+
+    asyncio.create_task(_do_install())
+    return {"status": "installing"}
 
 
 @router.get("/available")
@@ -319,27 +406,50 @@ async def scan_latest_models(
     results = []
 
     async def _scan_repo(repo: str) -> dict[str, Any] | None:
-        files = await _fetch_hf_repo_files(repo)
+        url = f"https://huggingface.co/api/models/{repo}"
+        try:
+            async with httpx.AsyncClient(timeout=6.0) as client:
+                r = await client.get(url, headers={"Accept": "application/json"})
+                if r.status_code != 200:
+                    return None
+                data = r.json()
+        except Exception:
+            return None
+
+        siblings = data.get("siblings") or []
+        files = [s["rfilename"] for s in siblings if "rfilename" in s]
         if not files:
             return None
         chosen = _pick_q4_file(files)
         if not chosen:
             return None
+
         hf_url = f"https://huggingface.co/{repo}/resolve/main/{chosen}"
+
+        # Try to get file size from siblings metadata
+        size_bytes = next(
+            (s.get("size") for s in siblings if s.get("rfilename") == chosen), None
+        )
+        size_gb = round(size_bytes / 1e9, 1) if size_bytes else None
+
         # Derive a human-readable name from repo slug
         parts = repo.split("/")
         display_name = parts[-1].replace("-GGUF", "").replace("-", " ")
-        # Strip bartowski/ prefix noise
         if parts[0].lower() == "bartowski":
             display_name = parts[1].replace("-GGUF", "").replace("-", " ")
+
         filename = chosen.lower()
         return {
             "name": display_name,
             "filename": filename,
             "hf_url": hf_url,
             "hf_repo": repo,
+            "size_gb": size_gb,
             "downloaded": filename in downloaded,
             "all_files": [f for f in files if f.endswith(".gguf")],
+            "last_modified": data.get("lastModified"),
+            "downloads": data.get("downloads", 0),
+            "likes": data.get("likes", 0),
         }
 
     tasks = [_scan_repo(repo) for repo in HF_SCAN_REPOS]

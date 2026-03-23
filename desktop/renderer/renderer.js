@@ -1256,6 +1256,27 @@ function connectWs() {
         loadBuiltinSection();
         refreshConfig();
       }
+      // Inference engine auto-install events
+      if (msg.event === "llama_cpp_install_progress") {
+        _appendInstallLog(msg.payload?.line || "");
+      }
+      if (msg.event === "llama_cpp_install_complete") {
+        _hideInstallPanel();
+        showToast("Inference engine installed! Loading model…", "success", 4000);
+        refreshEngineStatusBar();
+        const pendingFile = _pendingLoadAfterInstall;
+        _pendingLoadAfterInstall = null;
+        if (pendingFile) {
+          // Short delay so the engine module can be imported cleanly
+          setTimeout(() => _loadModel(pendingFile, null), 800);
+        }
+      }
+      if (msg.event === "llama_cpp_install_error") {
+        _hideInstallPanel();
+        _pendingLoadAfterInstall = null;
+        showToast(`Engine install failed: ${msg.payload?.error || "unknown error"}`, "error", 10000);
+      }
+
       if (msg.event === "model_load_error") {
         const { filename, error } = msg.payload || {};
         showToast(`Failed to load ${filename || "model"}: ${error || "unknown error"}`, "error", 6000);
@@ -1311,48 +1332,63 @@ function _updateBuiltinModeToggle(mode) {
   document.getElementById("builtin-models-section").classList.toggle("hidden", mode !== "internal");
 }
 
-// ── llama-cpp-python install guide ──────────────────────────────────────────
-// Call this once when entering Built-in Models mode.
-async function checkLlamaCppStatus() {
-  const section = document.getElementById("builtin-models-section");
-  const existing = document.getElementById("llama-cpp-banner");
-  if (existing) existing.remove();
-
+// ── Inference engine status bar (non-blocking) ──────────────────────────────
+// Shows a subtle notice when llama-cpp-python is not installed, but does NOT
+// prevent downloads or browsing. The Load button handles the missing dep case.
+async function refreshEngineStatusBar() {
+  const bar = document.getElementById("engine-status-bar");
+  if (!bar) return;
   try {
     const r = await api("/models/internal/status");
     const data = await r.json();
-    if (data.installed) return; // nothing to show
-
-    const banner = document.createElement("div");
-    banner.id = "llama-cpp-banner";
-    banner.className = "llama-cpp-banner";
-    const isAppleSilicon = data.is_apple_silicon;
-    const cmd = data.install_cmd || "pip install llama-cpp-python";
-    banner.innerHTML = `
-      <div class="llama-cpp-banner-icon">⚠</div>
-      <div class="llama-cpp-banner-body">
-        <strong>llama-cpp-python not installed</strong>
-        <p>Built-in inference requires llama-cpp-python.
-        ${isAppleSilicon ? "You're on Apple Silicon — use the Metal build for GPU acceleration:" : "Install with pip:"}</p>
-        <div class="llama-cpp-cmd-wrap">
-          <code id="llama-install-cmd">${escapeHtml(cmd)}</code>
-          <button class="btn secondary btn-sm" onclick="copyInstallCmd()">Copy</button>
-        </div>
-        ${isAppleSilicon ? `<p class="settings-desc" style="margin-top:6px">The Metal build offloads model layers to the Apple GPU, making inference 4-10× faster and using unified memory efficiently.</p>` : ""}
+    if (data.installed) {
+      bar.classList.add("hidden");
+      bar.innerHTML = "";
+      return;
+    }
+    bar.classList.remove("hidden");
+    const gpu = data.is_apple_silicon
+      ? "Metal (Apple GPU)"
+      : "CUDA / CPU";
+    bar.innerHTML = `
+      <div class="engine-status-notice">
+        <span class="engine-status-icon">ℹ</span>
+        <span>Inference engine not yet installed — you can still download models now.
+        When you click <strong>Load</strong>, Rovot will install it automatically.</span>
+        <span class="engine-status-badge">${escapeHtml(gpu)}</span>
       </div>`;
-    section.insertBefore(banner, section.firstChild);
-  } catch (_) {}
+  } catch (_) {
+    bar.classList.add("hidden");
+  }
 }
 
-function copyInstallCmd() {
-  const cmd = document.getElementById("llama-install-cmd")?.textContent || "";
-  navigator.clipboard.writeText(cmd).then(() => showToast("Copied install command.", "success", 2000));
+// ── Auto-install progress (WebSocket-driven) ─────────────────────────────────
+// Tracks a pending "install then load" action so the WS handler can resume it.
+let _pendingLoadAfterInstall = null;
+
+function _showInstallPanel() {
+  const panel = document.getElementById("engine-install-panel");
+  const log   = document.getElementById("engine-install-log");
+  if (!panel || !log) return;
+  log.textContent = "";
+  panel.classList.remove("hidden");
+  panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
-window.copyInstallCmd = copyInstallCmd;
+function _hideInstallPanel() {
+  const panel = document.getElementById("engine-install-panel");
+  if (panel) panel.classList.add("hidden");
+}
+
+function _appendInstallLog(line) {
+  const log = document.getElementById("engine-install-log");
+  if (!log) return;
+  log.textContent += line + "\n";
+  log.scrollTop = log.scrollHeight;
+}
 
 // ── Catalog tabs: Static / Scan / Search ────────────────────────────────────
-let _catalogTab = "static";
+let _catalogTab = "scan"; // default to live HuggingFace feed
 
 function setupCatalogTabs() {
   const container = document.getElementById("catalog-tab-container");
@@ -1368,6 +1404,11 @@ function setupCatalogTabs() {
       if (_catalogTab === "scan") loadScanCatalog();
       if (_catalogTab === "search") focusCatalogSearch();
     });
+  });
+
+  // Sync active class to current _catalogTab on (re-)init
+  container.querySelectorAll(".catalog-tab-btn").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.tab === _catalogTab);
   });
 }
 
@@ -1530,15 +1571,15 @@ async function _loadModel(filename, btn) {
     body: JSON.stringify({ model_filename: filename }),
   });
   if (!r.ok) {
-    const data = await r.json();
+    const data = await r.json().catch(() => ({}));
     const detail = data.detail || {};
-    if (detail.error_type === "llama_cpp_not_installed" || (typeof detail === "object" && detail.install_cmd)) {
-      // Show the banner and a toast with the install command
-      showToast(`llama-cpp-python not installed. Run: ${detail.install_cmd}`, "error", 10000);
-      await checkLlamaCppStatus(); // refresh the banner
-    } else {
-      showToast(detail.message || detail || "Failed to start model load.", "error");
+    if (detail.error === "llama_cpp_not_installed" || detail.error_type === "llama_cpp_not_installed" || detail.install_cmd) {
+      // Offer seamless auto-install instead of showing a scary banner
+      if (btn) { btn.disabled = false; btn.textContent = "Load"; }
+      _promptInstallAndLoad(filename);
+      return;
     }
+    showToast(detail.message || (typeof detail === "string" ? detail : "") || "Failed to start model load.", "error");
     if (btn) { btn.disabled = false; btn.textContent = "Load"; }
     return;
   }
@@ -1552,9 +1593,50 @@ async function _loadModel(filename, btn) {
   await refreshConfig();
 }
 
-// ── Revised loadBuiltinSection ───────────────────────────────────────────────
+// ── Auto-install + load flow ─────────────────────────────────────────────────
+async function _promptInstallAndLoad(filename) {
+  // Show a toast with an "Install & Load" action instead of a scary banner
+  showToast(
+    "Inference engine not installed. Starting auto-install…",
+    "info",
+    3000
+  );
+  _pendingLoadAfterInstall = filename;
+  _showInstallPanel();
+  try {
+    const r = await api("/models/internal/install-engine", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+    if (!r.ok) {
+      const data = await r.json().catch(() => ({}));
+      const detail = data.detail || {};
+      if (detail.error === "cannot_install_in_bundle") {
+        _hideInstallPanel();
+        _pendingLoadAfterInstall = null;
+        showToast(
+          "Auto-install is unavailable in the packaged app. Please reinstall Rovot.",
+          "error",
+          10000
+        );
+        return;
+      }
+      _hideInstallPanel();
+      _pendingLoadAfterInstall = null;
+      showToast(detail.message || "Failed to start install.", "error");
+    }
+    // Progress and completion are handled via WebSocket (see ws handler below)
+  } catch (err) {
+    _hideInstallPanel();
+    _pendingLoadAfterInstall = null;
+    showToast(`Install error: ${err.message}`, "error");
+  }
+}
+
+// ── loadBuiltinSection ───────────────────────────────────────────────────────
 async function loadBuiltinSection() {
-  await checkLlamaCppStatus();
+  // Non-blocking engine status bar (no scary banner, just a subtle notice)
+  refreshEngineStatusBar();
 
   // Loaded model status
   const statusEl = document.getElementById("builtin-loaded-status");
@@ -1575,7 +1657,7 @@ async function loadBuiltinSection() {
       statusEl.textContent = "No model loaded";
     }
   } catch (_) {
-    statusEl.textContent = "Built-in inference unavailable";
+    statusEl.textContent = "No model loaded";
   }
 
   // Available (downloaded) models list
@@ -1586,7 +1668,7 @@ async function loadBuiltinSection() {
     const data2 = await r2.json();
     const models = data2.models || [];
     if (models.length === 0) {
-      availEl.innerHTML = '<div class="info-box">No models downloaded yet. Use the catalog below.</div>';
+      availEl.innerHTML = '<div class="info-box">No models downloaded yet. Browse the catalog below to get started.</div>';
     } else {
       models.forEach(filename => {
         const el = document.createElement("div");
@@ -1601,9 +1683,11 @@ async function loadBuiltinSection() {
     }
   } catch (_) {}
 
-  // Catalog section with tabs
+  // Catalog section with tabs — default tab is "scan" (live HuggingFace)
   setupCatalogTabs();
   if (_catalogTab === "static") loadStaticCatalog();
+  else if (_catalogTab === "scan") loadScanCatalog();
+  else if (_catalogTab === "search") focusCatalogSearch();
 }
 
 document.getElementById("mode-builtin").addEventListener("click", async () => {
