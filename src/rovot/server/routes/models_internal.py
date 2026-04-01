@@ -3,7 +3,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import platform
+from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
@@ -100,6 +102,7 @@ HF_SCAN_REPOS = [
 ]
 
 _Q4_PREFERENCE = ["Q4_K_M", "Q4_K_S", "Q5_K_M", "Q4_0"]
+_ALLOWED_HF_HOSTS = {"huggingface.co", "www.huggingface.co"}
 
 
 def _pick_q4_file(files: list[str]) -> str | None:
@@ -113,6 +116,30 @@ def _pick_q4_file(files: list[str]) -> str | None:
         if f.endswith(".gguf") and "Q4" in f.upper():
             return f
     return None
+
+
+def _validate_model_filename(filename: str) -> str:
+    cleaned = Path(filename).name
+    if not cleaned or cleaned != filename:
+        raise HTTPException(
+            status_code=422,
+            detail="Invalid model filename. Use a plain .gguf filename without directories.",
+        )
+    if not cleaned.lower().endswith(".gguf"):
+        raise HTTPException(status_code=422, detail="Built-in models must use .gguf files.")
+    return cleaned
+
+
+def _validate_hf_url(hf_url: str) -> str:
+    parsed = urlparse(hf_url)
+    if parsed.scheme != "https" or parsed.netloc.lower() not in _ALLOWED_HF_HOSTS:
+        raise HTTPException(
+            status_code=422,
+            detail="Built-in model downloads only support https://huggingface.co .gguf URLs.",
+        )
+    if not parsed.path.lower().endswith(".gguf"):
+        raise HTTPException(status_code=422, detail="Built-in model downloads require a .gguf URL.")
+    return hf_url
 
 
 async def _fetch_hf_repo_files(repo: str) -> list[str]:
@@ -212,6 +239,7 @@ async def load_model(
     state: AppState = Depends(get_state),
 ) -> dict[str, Any]:
     """Load a .gguf model. Runs in a background thread to avoid blocking."""
+    model_filename = _validate_model_filename(req.model_filename)
     # Check llama-cpp-python is actually installed before we even try
     cpp_status = _detect_llama_cpp_status()
     if not cpp_status["installed"]:
@@ -235,12 +263,10 @@ async def load_model(
         raise HTTPException(status_code=409, detail="A model is already loading.")
 
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
-    model_path = MODELS_DIR / req.model_filename
+    model_path = MODELS_DIR / model_filename
     if not model_path.exists():
         provider.end_load()
-        raise HTTPException(
-            status_code=404, detail=f"Model not found: {req.model_filename}"
-        )
+        raise HTTPException(status_code=404, detail=f"Model not found: {model_filename}")
 
     async def _do_load():
         loop = asyncio.get_event_loop()
@@ -248,13 +274,13 @@ async def load_model(
             await loop.run_in_executor(
                 None,
                 lambda: provider.load_model(
-                    req.model_filename,
+                    model_filename,
                     n_ctx=req.n_ctx,
                     n_gpu_layers=req.n_gpu_layers,
                 ),
             )
             await state.ws.broadcast(
-                "model_load_complete", {"filename": req.model_filename}
+                "model_load_complete", {"filename": model_filename}
             )
         except ImportError as exc:
             # This should be caught above, but just in case
@@ -262,22 +288,22 @@ async def load_model(
             await state.ws.broadcast(
                 "model_load_error",
                 {
-                    "filename": req.model_filename,
+                    "filename": model_filename,
                     "error": str(exc),
                     "install_cmd": cpp_info.get("install_cmd"),
                     "error_type": "llama_cpp_not_installed",
                 },
             )
         except Exception as exc:
-            logger.exception("Failed to load model %s", req.model_filename)
+            logger.exception("Failed to load model %s", model_filename)
             await state.ws.broadcast(
-                "model_load_error", {"filename": req.model_filename, "error": str(exc)}
+                "model_load_error", {"filename": model_filename, "error": str(exc)}
             )
         finally:
             provider.end_load()
 
     asyncio.create_task(_do_load())
-    return {"status": "loading", "filename": req.model_filename}
+    return {"status": "loading", "filename": model_filename}
 
 
 @router.post("/unload")
@@ -425,16 +451,18 @@ async def download_model(
     state: AppState = Depends(get_state),
 ) -> dict[str, Any]:
     """Download a model file to ~/.rovot/models/ with WebSocket progress events."""
+    filename = _validate_model_filename(req.filename)
+    hf_url = _validate_hf_url(req.hf_url)
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
-    dest = MODELS_DIR / req.filename
+    dest = MODELS_DIR / filename
 
     if dest.exists():
-        return {"status": "already_downloaded", "filename": req.filename}
+        return {"status": "already_downloaded", "filename": filename}
 
     async def _do_download():
         try:
             async with httpx.AsyncClient(timeout=None, follow_redirects=True) as client:
-                async with client.stream("GET", req.hf_url) as response:
+                async with client.stream("GET", hf_url) as response:
                     response.raise_for_status()
                     total = int(response.headers.get("content-length", 0))
                     downloaded = 0
@@ -446,22 +474,22 @@ async def download_model(
                             await state.ws.broadcast(
                                 "model_download_progress",
                                 {
-                                    "filename": req.filename,
+                                    "filename": filename,
                                     "progress": round(progress, 4),
                                     "bytes_downloaded": downloaded,
                                     "total_bytes": total,
                                 },
                             )
             await state.ws.broadcast(
-                "model_download_complete", {"filename": req.filename}
+                "model_download_complete", {"filename": filename}
             )
         except Exception as exc:
-            logger.exception("Download failed for %s", req.filename)
+            logger.exception("Download failed for %s", filename)
             if dest.exists():
                 dest.unlink(missing_ok=True)
             await state.ws.broadcast(
-                "model_download_error", {"filename": req.filename, "error": str(exc)}
+                "model_download_error", {"filename": filename, "error": str(exc)}
             )
 
     asyncio.create_task(_do_download())
-    return {"status": "downloading", "filename": req.filename}
+    return {"status": "downloading", "filename": filename}

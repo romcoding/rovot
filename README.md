@@ -61,6 +61,21 @@ rovot config set model.model gpt-oss:20b
 
 Or use the **Models** view in the desktop UI to change the base URL, pick a model, and rescan servers.
 
+### Built-in Hugging Face models
+
+Rovot also supports a built-in local model path for Hugging Face-hosted `.gguf` files.
+
+- This path downloads a `.gguf` file into `~/.rovot/models/` and loads it in-process with `llama-cpp-python`.
+- It is intended for local desktop or local daemon usage, not serverless deployments.
+- It does not load arbitrary Hugging Face `transformers` checkpoints, `safetensors`, or multi-file repos directly.
+- Built-in inference currently has reduced capability versus the OpenAI-compatible provider path, including no tool calling.
+
+For Apple Silicon, install `llama-cpp-python` with Metal support:
+
+```bash
+CMAKE_ARGS='-DGGML_METAL=on' pip install llama-cpp-python
+```
+
 ## Email connector (IMAP/SMTP)
 
 Enable the connector and set `consent_granted` explicitly:
@@ -228,6 +243,8 @@ rovot config set model.cloud_base_url https://api.openai.com/v1
 rovot config set model.cloud_model gpt-4o-mini
 rovot secret set openai.api_key "$OPENAI_API_KEY"
 ```
+
+Cloud mode is best paired with an external OpenAI-compatible model server or cloud provider. The built-in `.gguf` download/load flow expects writable local disk under `~/.rovot/models/`, enough RAM for the selected model, and a long-lived process, which makes it a poor fit for Vercel-style serverless deployments.
 
 ### Messaging channels (webhooks)
 
