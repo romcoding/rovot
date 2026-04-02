@@ -441,6 +441,7 @@ async function checkOnboarding() {
       cachedConfig = await r.json();
       if (cachedConfig.onboarded === true) {
         onboardingEl.classList.add("hidden");
+        applyUserMode(cachedConfig.user_mode || "standard");
         updateIndicators();
         return;
       }
@@ -449,29 +450,223 @@ async function checkOnboarding() {
   onboardingEl.classList.remove("hidden");
 }
 
+// Onboarding state
+let _onboardMode = "standard"; // "standard" | "developer"
+let _onboardModelFilename = null;
+let _onboardModelName = null;
+let _onboardDownloadingFilename = null;
+
 function setupOnboarding() {
-  document.querySelectorAll('.option-card input[name="compute"]').forEach((radio) => {
+  // Step 0: mode card selection
+  document.querySelectorAll('input[name="user-mode"]').forEach((radio) => {
     radio.addEventListener("change", () => {
-      document.querySelectorAll(".option-card").forEach((c) => c.classList.remove("selected"));
+      document.querySelectorAll('.option-card').forEach((c) => c.classList.remove("selected"));
       radio.closest(".option-card").classList.add("selected");
-      const apiSection = document.getElementById("api-key-section");
-      apiSection.classList.toggle("hidden", radio.value !== "api");
-      const builtinNote = document.getElementById("builtin-onboard-note");
-      if (builtinNote) builtinNote.classList.toggle("hidden", radio.value !== "builtin");
+      _onboardMode = radio.value;
     });
   });
 
-  document.querySelectorAll("[data-next]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const next = parseInt(btn.getAttribute("data-next"));
-      goToOnboardStep(next);
-      if (next === 1) probeModels();
+  document.getElementById("onboard-step0-next").addEventListener("click", async () => {
+    await api("/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: "user_mode", value: _onboardMode }) });
+    goToOnboardStep(1);
+    await _loadOnboardStep1();
+  });
+
+  // Step 1 navigation
+  document.getElementById("onboard-back-1").addEventListener("click", () => goToOnboardStep(0));
+  document.getElementById("onboard-next-1").addEventListener("click", () => goToOnboardStep(2));
+
+  // Developer mode compute radio listeners
+  document.querySelectorAll('input[name="compute"]').forEach((radio) => {
+    radio.addEventListener("change", () => {
+      document.querySelectorAll('.option-card').forEach((c) => c.classList.remove("selected"));
+      radio.closest(".option-card").classList.add("selected");
+      const apiSection = document.getElementById("api-key-section");
+      if (apiSection) apiSection.classList.toggle("hidden", radio.value !== "api");
+      const builtinNote = document.getElementById("builtin-onboard-note");
+      if (builtinNote) builtinNote.classList.toggle("hidden", radio.value !== "builtin");
+      const probeWrap = document.getElementById("model-probe-results-wrap");
+      if (probeWrap) {
+        probeWrap.classList.toggle("hidden", radio.value !== "local");
+        if (radio.value === "local") probeModels();
+      }
     });
   });
-  document.querySelectorAll("[data-prev]").forEach((btn) => {
-    btn.addEventListener("click", () => goToOnboardStep(parseInt(btn.getAttribute("data-prev"))));
+
+  // Step 2 navigation
+  document.getElementById("onboard-back-2").addEventListener("click", () => goToOnboardStep(1));
+  document.getElementById("onboard-next-2").addEventListener("click", () => goToOnboardStep(3));
+
+  // Step 3 navigation
+  document.getElementById("onboard-back-3").addEventListener("click", () => goToOnboardStep(2));
+  document.getElementById("onboard-next-3").addEventListener("click", () => goToOnboardStep(4));
+
+  // Step 4 privacy checkbox
+  const privacyCb = document.getElementById("onboard-privacy-understood");
+  const privacyNext = document.getElementById("onboard-next-4");
+  if (privacyCb && privacyNext) {
+    privacyCb.addEventListener("change", () => { privacyNext.disabled = !privacyCb.checked; });
+  }
+  document.getElementById("onboard-back-4").addEventListener("click", () => goToOnboardStep(3));
+  document.getElementById("onboard-next-4").addEventListener("click", () => {
+    goToOnboardStep(5);
+    _loadOnboardStep5();
   });
+
+  // Step 5 finish
   document.getElementById("onboard-finish").addEventListener("click", finishOnboarding);
+
+  // Hide macOS connector row on non-macOS
+  const macosRow = document.getElementById("onboard-macos-row");
+  if (macosRow && !navigator.userAgent.includes("Mac")) {
+    macosRow.classList.add("hidden");
+  }
+}
+
+async function _loadOnboardStep1() {
+  const stdBranch = document.getElementById("step1-standard");
+  const devBranch = document.getElementById("step1-developer");
+
+  if (_onboardMode === "standard") {
+    stdBranch.classList.remove("hidden");
+    devBranch.classList.add("hidden");
+
+    const cardEl = document.getElementById("step1-recommended-card");
+    const rec = await getRecommendedModel();
+    if (rec) {
+      _onboardModelFilename = rec.recommended_filename;
+      _onboardModelName = rec.recommended_name;
+      const catalogEntry = await getCatalogEntry(rec.recommended_filename);
+      const metaParts = [];
+      if (catalogEntry?.size_gb) metaParts.push(`${catalogEntry.size_gb} GB`);
+      if (catalogEntry?.ram_required_gb) metaParts.push(`${catalogEntry.ram_required_gb} GB RAM`);
+      const metaStr = metaParts.join(" · ");
+      cardEl.innerHTML = `
+        <div class="catalog-info">
+          <strong>${escapeHtml(rec.recommended_name)}</strong>
+          <span class="badge badge-green" style="margin-left:6px">Recommended for your device</span>
+          ${metaStr ? `<span class="catalog-meta" style="display:block;margin-top:4px">${escapeHtml(metaStr)}</span>` : ""}
+          <span class="catalog-desc" style="display:block;margin-top:4px">${escapeHtml(rec.reason)}</span>
+        </div>`;
+    } else {
+      _onboardModelFilename = null;
+      _onboardModelName = null;
+      cardEl.innerHTML = `<div class="info-box">Could not detect device specs. Choose a model below.</div>`;
+    }
+
+    // "Choose a different model" toggle
+    const chooseDiffBtn = document.getElementById("step1-choose-different");
+    if (chooseDiffBtn && !chooseDiffBtn.dataset.init) {
+      chooseDiffBtn.dataset.init = "true";
+      chooseDiffBtn.addEventListener("click", async () => {
+        const altSection = document.getElementById("step1-alt-models");
+        altSection.classList.toggle("hidden");
+        if (!altSection.classList.contains("hidden") && !altSection.dataset.loaded) {
+          altSection.dataset.loaded = "true";
+          const listEl = document.getElementById("step1-catalog-list");
+          listEl.innerHTML = '<div class="info-box">Loading…</div>';
+          try {
+            const r = await api("/models/internal/catalog");
+            const catalog = await r.json();
+            listEl.innerHTML = "";
+            catalog.forEach(item => {
+              const card = document.createElement("div");
+              card.className = "catalog-card";
+              card.innerHTML = `
+                <div class="catalog-info">
+                  <strong>${escapeHtml(item.name)}</strong>
+                  <span class="catalog-meta" style="display:block;margin-top:4px">${item.size_gb || "?"} GB · ${item.ram_required_gb || "?"} GB RAM</span>
+                  <span class="catalog-desc" style="display:block">${escapeHtml(item.description || "")}</span>
+                </div>
+                <div class="catalog-action">
+                  <button class="btn secondary btn-sm step1-select-btn" data-filename="${escapeHtml(item.filename)}" data-name="${escapeHtml(item.name)}">Select</button>
+                </div>`;
+              card.querySelector(".step1-select-btn").addEventListener("click", (e) => {
+                _onboardModelFilename = e.target.dataset.filename;
+                _onboardModelName = e.target.dataset.name;
+                listEl.querySelectorAll(".step1-select-btn").forEach(b => { b.textContent = "Select"; b.classList.replace("primary", "secondary"); });
+                e.target.textContent = "Selected ✓";
+                e.target.classList.replace("secondary", "primary");
+              });
+              listEl.appendChild(card);
+            });
+          } catch (_) {
+            listEl.innerHTML = '<div class="info-box">Could not load catalog.</div>';
+          }
+        }
+      });
+    }
+  } else {
+    // Developer mode
+    stdBranch.classList.add("hidden");
+    devBranch.classList.remove("hidden");
+    // Auto-probe if local is selected
+    const selectedCompute = document.querySelector('input[name="compute"]:checked')?.value;
+    if (selectedCompute === "local") {
+      document.getElementById("model-probe-results-wrap")?.classList.remove("hidden");
+      probeModels();
+    }
+  }
+
+  // Step 4: configure based on mode
+  const privacyUnderstandRow = document.getElementById("privacy-understand-row");
+  const privacyNext = document.getElementById("onboard-next-4");
+  if (_onboardMode === "developer") {
+    if (privacyUnderstandRow) privacyUnderstandRow.classList.add("hidden");
+    if (privacyNext) privacyNext.disabled = false;
+  } else {
+    if (privacyUnderstandRow) privacyUnderstandRow.classList.remove("hidden");
+    if (privacyNext) privacyNext.disabled = !(document.getElementById("onboard-privacy-understood")?.checked);
+  }
+}
+
+async function _loadOnboardStep5() {
+  const stdContent = document.getElementById("step5-standard-content");
+  const devContent = document.getElementById("step5-developer-content");
+  const finishBtn = document.getElementById("onboard-finish");
+
+  if (_onboardMode === "standard") {
+    stdContent.classList.remove("hidden");
+    devContent.classList.add("hidden");
+
+    if (_onboardModelFilename) {
+      const modelLabel = document.getElementById("step5-model-label");
+      const statusLabel = document.getElementById("step5-status-label");
+      const progressBar = document.getElementById("step5-progress-bar");
+
+      if (modelLabel) modelLabel.textContent = `Downloading ${_onboardModelName || _onboardModelFilename}…`;
+      if (progressBar) progressBar.style.display = "";
+      if (statusLabel) statusLabel.textContent = "";
+      if (finishBtn) finishBtn.disabled = true;
+
+      const catalogEntry = await getCatalogEntry(_onboardModelFilename);
+      if (!catalogEntry?.hf_url) {
+        if (statusLabel) statusLabel.textContent = "Could not find download URL. You can download later in Settings → Models.";
+        if (finishBtn) finishBtn.disabled = false;
+        return;
+      }
+      _onboardDownloadingFilename = _onboardModelFilename;
+      try {
+        await api("/models/internal/download", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ filename: _onboardModelFilename, hf_url: catalogEntry.hf_url }),
+        });
+      } catch (err) {
+        if (statusLabel) statusLabel.textContent = `Download failed: ${err.message}. You can retry in Settings → Models.`;
+        if (finishBtn) finishBtn.disabled = false;
+        _onboardDownloadingFilename = null;
+      }
+    } else {
+      document.getElementById("step5-download-section")?.classList.add("hidden");
+      document.getElementById("step5-no-model")?.classList.remove("hidden");
+      if (finishBtn) finishBtn.disabled = false;
+    }
+  } else {
+    stdContent.classList.add("hidden");
+    devContent.classList.remove("hidden");
+    if (finishBtn) finishBtn.disabled = false;
+  }
 }
 
 function goToOnboardStep(n) {
@@ -485,6 +680,7 @@ function goToOnboardStep(n) {
 
 async function probeModels() {
   const container = document.getElementById("model-probe-results");
+  if (!container) return;
   const servers = [
     { name: "LM Studio", url: "http://localhost:1234/v1" },
     { name: "Ollama",    url: "http://localhost:11434/v1" },
@@ -560,39 +756,59 @@ async function finishOnboarding() {
   btn.disabled = true;
   btn.textContent = "Saving…";
 
-  const compute = document.querySelector('input[name="compute"]:checked').value;
+  // Persist user_mode (was saved in step 0, but confirm)
+  await api("/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: "user_mode", value: _onboardMode }) });
+
   let useInternalModel = false;
-  if (compute === "local") {
-    const found = document.querySelector(".probe-item[data-verified='true']") ||
-                  document.querySelector(".probe-item.found");
-    const url = found ? found.getAttribute("data-url") : "http://localhost:1234/v1";
-    await api("/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: "model.provider_mode", value: "local" }) });
-    await api("/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: "model.base_url", value: url }) });
-  } else if (compute === "builtin") {
-    await api("/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: "model.provider_mode", value: "internal" }) });
-    useInternalModel = true;
+
+  if (_onboardMode === "developer") {
+    const compute = document.querySelector('input[name="compute"]:checked')?.value || "local";
+    if (compute === "local") {
+      const found = document.querySelector(".probe-item[data-verified='true']") ||
+                    document.querySelector(".probe-item.found");
+      const url = found ? found.getAttribute("data-url") : "http://localhost:1234/v1";
+      await api("/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: "model.provider_mode", value: "local" }) });
+      await api("/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: "model.base_url", value: url }) });
+    } else if (compute === "builtin") {
+      await api("/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: "model.provider_mode", value: "internal" }) });
+      useInternalModel = true;
+    } else {
+      const apiUrl = document.getElementById("onboard-api-url")?.value.trim() || "";
+      const apiKey = document.getElementById("onboard-api-key")?.value.trim() || "";
+      await api("/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: "model.provider_mode", value: "cloud" }) });
+      if (apiUrl) await api("/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: "model.cloud_base_url", value: apiUrl }) });
+      if (apiKey) await api("/secrets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: "openai.api_key", value: apiKey }) });
+    }
   } else {
-    const apiUrl = document.getElementById("onboard-api-url").value.trim();
-    const apiKey = document.getElementById("onboard-api-key").value.trim();
-    await api("/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: "model.provider_mode", value: "cloud" }) });
-    if (apiUrl) await api("/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: "model.cloud_base_url", value: apiUrl }) });
-    if (apiKey) await api("/secrets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: "openai.api_key", value: apiKey }) });
+    // Standard mode: model was already downloading / will be loaded automatically
+    if (_onboardModelFilename) {
+      await api("/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: "model.provider_mode", value: "internal" }) });
+    }
   }
 
-  const fsEnabled    = document.getElementById("onboard-fs").checked;
-  const emailEnabled = document.getElementById("onboard-email").checked;
+  // Connectors
+  const fsEnabled      = document.getElementById("onboard-fs")?.checked !== false;
+  const emailEnabled   = document.getElementById("onboard-email")?.checked === true;
+  const browserEnabled = document.getElementById("onboard-browser")?.checked === true;
+  const macosEnabled   = document.getElementById("onboard-macos")?.checked === true;
   await api("/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: "connectors.filesystem_enabled", value: fsEnabled }) });
   await api("/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: "connectors.email.enabled", value: emailEnabled }) });
+  await api("/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: "connectors.browser_enabled", value: browserEnabled }) });
+  await api("/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: "connectors.macos_automation_enabled", value: macosEnabled }) });
+
+  // Workspace
+  const workspace = document.getElementById("onboard-workspace")?.value.trim();
+  if (workspace) await api("/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: "settings.workspace_dir", value: workspace }) });
+
   await api("/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: "onboarded", value: true }) });
 
+  _onboardDownloadingFilename = null;
   btn.disabled = false;
-  btn.textContent = "Get started";
+  btn.textContent = "Start chatting";
   onboardingEl.classList.add("hidden");
   await refreshConfig();
 
-  // Post-onboarding: if user chose built-in, prompt to download a model
   if (useInternalModel) {
-    // Switch to Models view and show model download prompt
     document.querySelectorAll(".nav-item").forEach((b) => b.classList.remove("active"));
     const settingsBtn = document.querySelector('.nav-item[data-view="settings"]');
     if (settingsBtn) settingsBtn.classList.add("active");
@@ -601,12 +817,7 @@ async function finishOnboarding() {
     activateSettingsTab("models");
     _updateBuiltinModeToggle("internal");
     await loadBuiltinSection();
-
-    showToast(
-      "To get started, download a model in the Models tab. We recommend Llama 3.2 3B (2GB).",
-      "success",
-      8000
-    );
+    showToast("To get started, download a model in the Models tab. We recommend Llama 3.2 3B (2GB).", "success", 8000);
   }
 }
 
@@ -615,7 +826,10 @@ async function finishOnboarding() {
 async function refreshConfig() {
   try {
     const r = await api("/config");
-    if (r.ok) cachedConfig = await r.json();
+    if (r.ok) {
+      cachedConfig = await r.json();
+      applyUserMode(cachedConfig.user_mode || "standard");
+    }
   } catch (_) {}
   updateIndicators();
 }
@@ -638,6 +852,22 @@ function updateIndicators() {
   const isAuto  = providerMode === "auto";
   privacyIndicator.textContent = isLocal ? "Local" : isAuto ? "Hybrid" : "Cloud";
   privacyIndicator.className   = "indicator " + (isLocal ? "privacy-local" : isAuto ? "privacy-hybrid" : "privacy-cloud");
+}
+
+// ── User mode ──
+
+function applyUserMode(mode) {
+  const isStandard = mode === "standard";
+
+  // Hide entire settings groups in standard mode
+  ["sg-mode-toggle", "sg-provider-routing", "sg-local-provider", "sg-detected-servers"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle("mode-hidden", isStandard);
+  });
+
+  // Hide the Security tab label in standard mode
+  const secTab = document.querySelector('.settings-tab[data-tab="security"]');
+  if (secTab) secTab.classList.toggle("mode-hidden", isStandard);
 }
 
 // ── Approvals (inline in message stream) ──
@@ -1231,6 +1461,15 @@ function connectWs() {
       if (msg.event === "model_download_progress") {
         const { filename, progress } = msg.payload || {};
         const pct = Math.round((progress || 0) * 100);
+
+        // Onboarding wizard progress bar
+        if (filename === _onboardDownloadingFilename) {
+          const fill  = document.querySelector("#step5-progress-bar .progress-fill");
+          const label = document.querySelector("#step5-progress-bar .progress-label");
+          if (fill)  fill.style.width  = pct + "%";
+          if (label) label.textContent = pct + "%";
+        }
+
         const progressBox = document.getElementById(`progress-${CSS.escape(filename || "")}`);
         if (progressBox) {
           progressBox.classList.remove("hidden");
@@ -1242,23 +1481,69 @@ function connectWs() {
       }
       if (msg.event === "model_download_complete") {
         const { filename } = msg.payload || {};
+
+        if (filename === _onboardDownloadingFilename) {
+          const statusLabel = document.getElementById("step5-status-label");
+          if (statusLabel) statusLabel.textContent = "Download complete. Loading model…";
+          const fill = document.querySelector("#step5-progress-bar .progress-fill");
+          if (fill) fill.style.width = "100%";
+          // Auto-load the model
+          api("/models/internal/load", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ model_filename: filename }),
+          }).catch(() => {
+            if (statusLabel) statusLabel.textContent = "Download complete. Load the model in Settings → Models.";
+            const finishBtn = document.getElementById("onboard-finish");
+            if (finishBtn) finishBtn.disabled = false;
+            _onboardDownloadingFilename = null;
+          });
+          return;
+        }
+
         showToast(`Downloaded ${filename || "model"} successfully.`, "success", 4000);
         loadBuiltinSection();
       }
       if (msg.event === "model_download_error") {
         const { filename, error } = msg.payload || {};
+
+        if (filename === _onboardDownloadingFilename) {
+          const statusLabel = document.getElementById("step5-status-label");
+          if (statusLabel) statusLabel.textContent = `Download failed: ${error || "unknown error"}. You can retry in Settings → Models.`;
+          const finishBtn = document.getElementById("onboard-finish");
+          if (finishBtn) finishBtn.disabled = false;
+          _onboardDownloadingFilename = null;
+          return;
+        }
+
         showToast(`Download failed for ${filename || "model"}: ${error || "unknown error"}`, "error", 6000);
         loadBuiltinSection();
       }
       if (msg.event === "model_load_complete") {
         const { filename } = msg.payload || {};
+
+        if (filename === _onboardDownloadingFilename) {
+          const statusLabel = document.getElementById("step5-status-label");
+          if (statusLabel) statusLabel.textContent = "Ready!";
+          const finishBtn = document.getElementById("onboard-finish");
+          if (finishBtn) finishBtn.disabled = false;
+          _onboardDownloadingFilename = null;
+          return;
+        }
+
         showToast(`Model loaded: ${filename || ""}`, "success", 3000);
         loadBuiltinSection();
         refreshConfig();
       }
       if (msg.event === "model_load_error") {
-        const { filename, error } = msg.payload || {};
-        showToast(`Failed to load ${filename || "model"}: ${error || "unknown error"}`, "error", 6000);
+        const { filename, error, error_type, install_cmd } = msg.payload || {};
+        if (error_type === "llama_cpp_not_installed") {
+          const cmd = install_cmd || "pip install llama-cpp-python";
+          showToast(`llama-cpp-python is not installed. Install with: ${cmd}`, "error", 12000);
+          checkLlamaCppStatus();
+        } else {
+          showToast(`Failed to load ${filename || "model"}: ${error || "unknown error"}`, "error", 6000);
+        }
         loadBuiltinSection();
       }
     } catch (_) {}
@@ -1305,6 +1590,27 @@ recBtn.onclick = async () => {
 
 const _downloadProgress = {}; // filename -> progress element
 
+// Cache for the static catalog (avoids repeated fetches in onboarding)
+let _catalogCache = null;
+
+async function getCatalogEntry(filename) {
+  if (!_catalogCache) {
+    try {
+      const r = await api("/models/internal/catalog");
+      _catalogCache = await r.json();
+    } catch (_) { return null; }
+  }
+  return (_catalogCache || []).find(e => e.filename === filename) || null;
+}
+
+async function getRecommendedModel() {
+  try {
+    const r = await api("/models/internal/recommend");
+    if (r.ok) return await r.json();
+  } catch (_) {}
+  return null;
+}
+
 function _updateBuiltinModeToggle(mode) {
   document.getElementById("mode-builtin").classList.toggle("active", mode === "internal");
   document.getElementById("mode-external").classList.toggle("active", mode !== "internal");
@@ -1341,6 +1647,16 @@ async function checkLlamaCppStatus() {
         ${isAppleSilicon ? `<p class="settings-desc" style="margin-top:6px">The Metal build offloads model layers to the Apple GPU, making inference 4-10× faster and using unified memory efficiently.</p>` : ""}
       </div>`;
     section.insertBefore(banner, section.firstChild);
+
+    // Disable all Load buttons while llama-cpp-python is missing
+    document.querySelectorAll('#builtin-available-list button').forEach(btn => {
+      btn.disabled = true;
+      btn.title = "Install llama-cpp-python first";
+    });
+    document.querySelectorAll('.catalog-load-btn').forEach(btn => {
+      btn.disabled = true;
+      btn.title = "Install llama-cpp-python first";
+    });
   } catch (_) {}
 }
 
@@ -1530,14 +1846,15 @@ async function _loadModel(filename, btn) {
     body: JSON.stringify({ model_filename: filename }),
   });
   if (!r.ok) {
-    const data = await r.json();
-    const detail = data.detail || {};
-    if (detail.error_type === "llama_cpp_not_installed" || (typeof detail === "object" && detail.install_cmd)) {
-      // Show the banner and a toast with the install command
-      showToast(`llama-cpp-python not installed. Run: ${detail.install_cmd}`, "error", 10000);
-      await checkLlamaCppStatus(); // refresh the banner
+    const data = await r.json().catch(() => ({}));
+    const detail = typeof data.detail === "object" ? data.detail : { message: data.detail };
+    if (detail.error_type === "llama_cpp_not_installed" || detail.install_cmd) {
+      const cmd = detail.install_cmd || "pip install llama-cpp-python";
+      showToast(`llama-cpp-python is not installed. Install with: ${cmd}`, "error", 12000);
+      await checkLlamaCppStatus();
     } else {
-      showToast(detail.message || detail || "Failed to start model load.", "error");
+      const msg = detail.message || detail.error || (typeof data.detail === "string" ? data.detail : null) || "Failed to start model load.";
+      showToast(msg, "error");
     }
     if (btn) { btn.disabled = false; btn.textContent = "Load"; }
     return;
@@ -1628,10 +1945,150 @@ document.getElementById("mode-external").addEventListener("click", async () => {
   await refreshConfig();
 });
 
+// ── Standard mode simplified models view ──
+
+async function _loadStandardModelsView() {
+  // Show/refresh llama-cpp banner in the standard view's banner slot
+  const bannerWrap = document.getElementById("std-llama-banner-wrap");
+  if (bannerWrap) {
+    bannerWrap.innerHTML = "";
+    try {
+      const r = await api("/models/internal/status");
+      const data = await r.json();
+      if (!data.installed) {
+        const cmd = data.install_cmd || "pip install llama-cpp-python";
+        const banner = document.createElement("div");
+        banner.className = "llama-cpp-banner";
+        banner.innerHTML = `
+          <div class="llama-cpp-banner-icon">⚠</div>
+          <div class="llama-cpp-banner-body">
+            <strong>llama-cpp-python not installed</strong>
+            <p>${data.is_apple_silicon ? "Apple Silicon detected — use the Metal build:" : "Install with pip:"}</p>
+            <div class="llama-cpp-cmd-wrap">
+              <code id="llama-install-cmd">${escapeHtml(cmd)}</code>
+              <button class="btn secondary btn-sm" onclick="copyInstallCmd()">Copy</button>
+            </div>
+          </div>`;
+        bannerWrap.appendChild(banner);
+      }
+    } catch (_) {}
+  }
+
+  // Current model status
+  const statusEl = document.getElementById("std-model-status");
+  if (statusEl) {
+    try {
+      const r = await api("/models/internal/loaded");
+      const data = await r.json();
+      if (data.loading) {
+        statusEl.innerHTML = '<span class="status-spinner" style="display:inline-block;width:14px;height:14px;margin-right:6px"></span>Loading model…';
+      } else if (data.loaded) {
+        statusEl.innerHTML = `<strong>${escapeHtml(data.loaded)}</strong> is loaded and ready.`;
+      } else {
+        statusEl.textContent = "No model loaded. Download a model to get started.";
+      }
+    } catch (_) {
+      statusEl.textContent = "Could not check model status.";
+    }
+  }
+
+  // "Change model" button toggles catalog section
+  const changeBtn = document.getElementById("std-change-model-btn");
+  if (changeBtn && !changeBtn.dataset.init) {
+    changeBtn.dataset.init = "true";
+    changeBtn.addEventListener("click", async () => {
+      const catalogSection = document.getElementById("std-catalog-section");
+      if (!catalogSection) return;
+      catalogSection.classList.toggle("hidden");
+      if (!catalogSection.classList.contains("hidden")) {
+        await _loadStandardCatalog();
+      }
+    });
+  }
+}
+
+async function _loadStandardCatalog() {
+  const listEl = document.getElementById("std-catalog-list");
+  if (!listEl || listEl.dataset.loaded) return;
+  listEl.dataset.loaded = "true";
+  listEl.innerHTML = '<div class="info-box">Loading…</div>';
+
+  try {
+    const [catalogRes, recRes] = await Promise.all([
+      api("/models/internal/catalog"),
+      api("/models/internal/recommend"),
+    ]);
+    const catalog = await catalogRes.json();
+    const rec = recRes.ok ? await recRes.json() : null;
+
+    listEl.innerHTML = "";
+    catalog.forEach(item => {
+      const isRec = rec && item.filename === rec.recommended_filename;
+      const card = document.createElement("div");
+      card.className = "catalog-card";
+      const metaParts = [];
+      if (item.size_gb) metaParts.push(`${item.size_gb} GB`);
+      if (item.ram_required_gb) metaParts.push(`${item.ram_required_gb} GB RAM`);
+      card.innerHTML = `
+        <div class="catalog-info">
+          <strong>${escapeHtml(item.name)}</strong>
+          ${isRec ? '<span class="badge badge-green" style="margin-left:6px">Recommended for your device</span>' : ""}
+          ${metaParts.length ? `<span class="catalog-meta" style="display:block;margin-top:4px">${escapeHtml(metaParts.join(" · "))}</span>` : ""}
+          <span class="catalog-desc" style="display:block">${escapeHtml(item.description || "")}</span>
+        </div>
+        <div class="catalog-action">
+          ${item.downloaded
+            ? `<button class="btn primary btn-sm catalog-load-btn" data-filename="${escapeHtml(item.filename)}">Load</button>`
+            : `<button class="btn secondary btn-sm catalog-dl-btn" data-filename="${escapeHtml(item.filename)}" data-url="${escapeHtml(item.hf_url)}">Download</button>`}
+          <div class="catalog-progress hidden" id="progress-std-${escapeHtml(item.filename)}">
+            <div class="progress-bar"><div class="progress-fill" style="width:0%"></div></div>
+            <span class="progress-label">0%</span>
+          </div>
+        </div>`;
+
+      const dlBtn = card.querySelector(".catalog-dl-btn");
+      if (dlBtn) {
+        dlBtn.addEventListener("click", async () => {
+          dlBtn.disabled = true;
+          dlBtn.textContent = "Downloading…";
+          await api("/models/internal/download", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ filename: item.filename, hf_url: item.hf_url }),
+          });
+        });
+      }
+      const loadBtn = card.querySelector(".catalog-load-btn");
+      if (loadBtn) {
+        loadBtn.addEventListener("click", () => _loadModel(item.filename, loadBtn));
+      }
+      listEl.appendChild(card);
+    });
+  } catch (_) {
+    listEl.innerHTML = '<div class="info-box">Could not load catalog.</div>';
+  }
+}
+
 // ── Models view ──
 
 async function loadModelsView() {
   await refreshConfig();
+
+  const userMode = cachedConfig?.user_mode || "standard";
+  const fullView = document.querySelector("#settings-panel-models .view-inner:not(#standard-models-view)");
+  const stdView = document.getElementById("standard-models-view");
+
+  if (userMode === "standard") {
+    if (fullView) fullView.classList.add("hidden");
+    if (stdView) stdView.classList.remove("hidden");
+    await _loadStandardModelsView();
+    return;
+  }
+
+  // Developer mode: show full view
+  if (fullView) fullView.classList.remove("hidden");
+  if (stdView) stdView.classList.add("hidden");
+
   if (cachedConfig) {
     document.getElementById("provider-mode").value        = cachedConfig.model?.provider_mode || "local";
     document.getElementById("provider-fallback").checked  = cachedConfig.model?.fallback_to_cloud === true;
@@ -1830,6 +2287,17 @@ async function loadSecurityView() {
     await api("/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: "use_keychain", value: keychainToggle.checked }) });
     await loadSecurityView();
   };
+
+  // User mode selector
+  const userModeSelect = document.getElementById("user-mode-select");
+  if (userModeSelect) {
+    userModeSelect.value = cachedConfig?.user_mode || "standard";
+    userModeSelect.onchange = async () => {
+      await api("/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: "user_mode", value: userModeSelect.value }) });
+      await refreshConfig();
+      activateSettingsTab("security");
+    };
+  }
 
   const domains = cachedConfig?.allowed_domains || [];
   document.getElementById("sec-domains").textContent = domains.length > 0
