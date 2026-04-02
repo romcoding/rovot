@@ -248,6 +248,7 @@ async def load_model(
             status_code=422,
             detail={
                 "error": "llama_cpp_not_installed",
+                "error_type": "llama_cpp_not_installed",
                 "message": (
                     "Built-in inference requires llama-cpp-python. "
                     f"Install with: {install_cmd}"
@@ -329,6 +330,73 @@ async def get_catalog(
         item["downloaded"] = entry["filename"] in downloaded
         result.append(item)
     return result
+
+
+@router.get("/recommend")
+async def recommend_model(
+    auth: AuthContext = Depends(get_auth_ctx),
+) -> dict[str, Any]:
+    """Return a recommended model based on available system RAM."""
+    ram_gb: float | None = None
+
+    # Try psutil first (preferred)
+    try:
+        import psutil  # type: ignore[import]
+        ram_gb = psutil.virtual_memory().total / (1024 ** 3)
+    except ImportError:
+        # Fallback: /proc/meminfo on Linux, sysctl on macOS
+        try:
+            import subprocess
+            if platform.system() == "Linux":
+                with open("/proc/meminfo") as f:
+                    for line in f:
+                        if line.startswith("MemTotal:"):
+                            kb = int(line.split()[1])
+                            ram_gb = kb / (1024 * 1024)
+                            break
+            elif platform.system() == "Darwin":
+                result = subprocess.run(
+                    ["sysctl", "hw.memsize"],
+                    capture_output=True, text=True, timeout=5,
+                )
+                if result.returncode == 0:
+                    mem_bytes = int(result.stdout.split(":")[1].strip())
+                    ram_gb = mem_bytes / (1024 ** 3)
+        except Exception:
+            ram_gb = None
+
+    if ram_gb is None:
+        return {
+            "ram_gb": None,
+            "recommended_filename": "llama-3.2-3b-instruct-q4_k_m.gguf",
+            "recommended_name": "Llama 3.2 3B (Q4_K_M)",
+            "reason": "Could not detect RAM, defaulting to 3B",
+        }
+
+    ram_rounded = round(ram_gb, 1)
+    if ram_gb < 4:
+        rec_filename = "llama-3.2-1b-instruct-q4_k_m.gguf"
+        rec_name = "Llama 3.2 1B (Q4_K_M)"
+        reason = f"Your device has {ram_rounded} GB RAM — this lightweight model fits comfortably"
+    elif ram_gb < 8:
+        rec_filename = "llama-3.2-3b-instruct-q4_k_m.gguf"
+        rec_name = "Llama 3.2 3B (Q4_K_M)"
+        reason = f"Your device has {ram_rounded} GB RAM — this balanced model will run well"
+    elif ram_gb < 16:
+        rec_filename = "llama-3.1-8b-instruct-q4_k_m.gguf"
+        rec_name = "Llama 3.1 8B (Q4_K_M)"
+        reason = f"Your device has {ram_rounded} GB RAM — this capable model will run comfortably"
+    else:
+        rec_filename = "qwen2.5-7b-instruct-q4_k_m.gguf"
+        rec_name = "Qwen 2.5 7B (Q4_K_M)"
+        reason = f"Your device has {ram_rounded} GB RAM — this powerful model is a great fit"
+
+    return {
+        "ram_gb": ram_rounded,
+        "recommended_filename": rec_filename,
+        "recommended_name": rec_name,
+        "reason": reason,
+    }
 
 
 @router.get("/catalog/scan")

@@ -34,62 +34,128 @@
           <span class="step-dot" data-step="1"></span>
           <span class="step-dot" data-step="2"></span>
           <span class="step-dot" data-step="3"></span>
+          <span class="step-dot" data-step="4"></span>
+          <span class="step-dot" data-step="5"></span>
         </div>
 
+        <!-- Step 0: Welcome / mode selection -->
         <div class="onboard-page active" data-page="0">
           <h2>Welcome to Rovot</h2>
-          <p>Choose how the AI model runs.</p>
+          <p>How would you like to get started?</p>
           <div class="option-cards">
-            <label class="option-card selected">
-              <input type="radio" name="compute" value="local" checked />
-              <strong>Local only</strong>
-              <span>Use a model server on your machine (LM Studio, Ollama, vLLM).</span>
+            <label class="option-card selected" id="mode-card-standard">
+              <input type="radio" name="user-mode" value="standard" checked />
+              <strong>Just get me started</strong>
+              <span>Rovot picks the right model for your device and keeps things simple.</span>
             </label>
-            <label class="option-card">
-              <input type="radio" name="compute" value="builtin" />
-              <strong>Built-in model (no server needed)</strong>
-              <span>Run a model directly inside Rovot — no extra software required.</span>
-            </label>
-            <label class="option-card">
-              <input type="radio" name="compute" value="api" />
-              <strong>Remote API key</strong>
-              <span>Use a cloud-hosted OpenAI-compatible endpoint.</span>
+            <label class="option-card" id="mode-card-developer">
+              <input type="radio" name="user-mode" value="developer" />
+              <strong>I want full control</strong>
+              <span>Configure model providers, API keys, and advanced settings.</span>
             </label>
           </div>
-          <div id="builtin-onboard-note" class="info-box hidden">
-            You'll download a model after setup (2–5 GB). We recommend Llama 3.2 3B (2 GB).
-          </div>
-          <div id="api-key-section" class="hidden">
-            <label>API base URL
-              <input id="onboard-api-url" type="text" placeholder="https://api.example.com/v1" />
-            </label>
-            <label>API key (stored in OS keychain)
-              <input id="onboard-api-key" type="password" placeholder="sk-..." />
-            </label>
-          </div>
-          <button class="btn primary" data-next="1">Continue</button>
+          <button class="btn primary" id="onboard-step0-next">Continue</button>
         </div>
 
+        <!-- Step 1: Model setup (branched by mode) -->
         <div class="onboard-page" data-page="1">
-          <h2>Detect models</h2>
-          <p>Scanning local model servers...</p>
-          <div id="model-probe-results" class="probe-list">
-            <div class="probe-item scanning">
-              <span class="probe-label">LM Studio (localhost:1234)</span>
-              <span class="probe-status">scanning...</span>
+          <!-- Standard mode: recommended model card -->
+          <div id="step1-standard">
+            <h2>Model setup</h2>
+            <p>We'll recommend a model based on your device.</p>
+            <div id="step1-recommended-card" class="catalog-card">
+              <div class="info-box">Detecting your device…</div>
             </div>
-            <div class="probe-item scanning">
-              <span class="probe-label">Ollama (localhost:11434)</span>
-              <span class="probe-status">scanning...</span>
+            <button class="btn secondary btn-sm" id="step1-choose-different" style="margin-top:8px">Choose a different model</button>
+            <div id="step1-alt-models" class="hidden" style="margin-top:8px">
+              <div id="step1-catalog-list" class="catalog-list"></div>
+            </div>
+          </div>
+          <!-- Developer mode: compute mode selection -->
+          <div id="step1-developer" class="hidden">
+            <h2>Compute mode</h2>
+            <p>Choose how the AI model runs.</p>
+            <div class="option-cards">
+              <label class="option-card selected">
+                <input type="radio" name="compute" value="local" checked />
+                <strong>Local only</strong>
+                <span>Use a model server on your machine (LM Studio, Ollama, vLLM).</span>
+              </label>
+              <label class="option-card">
+                <input type="radio" name="compute" value="builtin" />
+                <strong>Built-in model (no server needed)</strong>
+                <span>Run a model directly inside Rovot — no extra software required.</span>
+              </label>
+              <label class="option-card">
+                <input type="radio" name="compute" value="api" />
+                <strong>Remote API key</strong>
+                <span>Use a cloud-hosted OpenAI-compatible endpoint.</span>
+              </label>
+            </div>
+            <div id="builtin-onboard-note" class="info-box hidden">
+              You'll download a model after setup (2–5 GB). We recommend Llama 3.2 3B (2 GB).
+            </div>
+            <div id="api-key-section" class="hidden">
+              <label>API base URL
+                <input id="onboard-api-url" type="text" placeholder="https://api.example.com/v1" />
+              </label>
+              <label>API key (stored in OS keychain)
+                <input id="onboard-api-key" type="password" placeholder="sk-..." />
+              </label>
+            </div>
+            <div id="model-probe-results-wrap" class="hidden" style="margin-top:8px">
+              <p style="margin-bottom:6px;color:var(--text-secondary)">Scanning local model servers…</p>
+              <div id="model-probe-results" class="probe-list"></div>
             </div>
           </div>
           <div class="btn-row">
-            <button class="btn secondary" data-prev="0">Back</button>
-            <button class="btn primary" data-next="2">Continue</button>
+            <button class="btn secondary" id="onboard-back-1">Back</button>
+            <button class="btn primary" id="onboard-next-1">Continue</button>
           </div>
         </div>
 
+        <!-- Step 2: Connectors -->
         <div class="onboard-page" data-page="2">
+          <h2>Choose your connectors</h2>
+          <p>Select which integrations to enable.</p>
+          <div class="toggle-list">
+            <label class="toggle-row">
+              <input type="checkbox" id="onboard-fs" checked disabled />
+              <div>
+                <strong>Filesystem &#128274;</strong>
+                <span>Read and write files in your workspace. Required for core functionality.</span>
+              </div>
+            </label>
+            <label class="toggle-row">
+              <input type="checkbox" id="onboard-email" />
+              <div>
+                <strong>Email (IMAP/SMTP)</strong>
+                <span>Read inbox and send emails — requires approval for every send.</span>
+              </div>
+            </label>
+            <label class="toggle-row">
+              <input type="checkbox" id="onboard-browser" />
+              <div>
+                <strong>Browser</strong>
+                <span>Browse the web and read page content. Requires Playwright — installed automatically on first use.</span>
+              </div>
+            </label>
+            <label class="toggle-row" id="onboard-macos-row">
+              <input type="checkbox" id="onboard-macos" />
+              <div>
+                <strong>macOS Automation</strong>
+                <span>Control macOS apps via AppleScript and take screenshots. Requires approval for each action.</span>
+              </div>
+            </label>
+          </div>
+          <div class="btn-row">
+            <button class="btn secondary" id="onboard-back-2">Back</button>
+            <button class="btn primary" id="onboard-next-2">Continue</button>
+          </div>
+        </div>
+
+        <!-- Step 3: Workspace -->
+        <div class="onboard-page" data-page="3">
           <h2>Workspace</h2>
           <p>Rovot restricts file access to a workspace directory.</p>
           <label>Workspace path
@@ -97,48 +163,49 @@
           </label>
           <div class="info-box">Only files inside this directory can be read or written by the agent.</div>
           <div class="btn-row">
-            <button class="btn secondary" data-prev="1">Back</button>
-            <button class="btn primary" data-next="3">Continue</button>
+            <button class="btn secondary" id="onboard-back-3">Back</button>
+            <button class="btn primary" id="onboard-next-3">Continue</button>
           </div>
         </div>
 
-        <div class="onboard-page" data-page="3">
-          <h2>Connectors</h2>
-          <p>Choose which integrations to enable.</p>
-          <div class="toggle-list">
-            <label class="toggle-row">
-              <input type="checkbox" id="onboard-fs" checked />
-              <div>
-                <strong>Filesystem</strong>
-                <span>Read and write files in your workspace</span>
-              </div>
-            </label>
-            <label class="toggle-row">
-              <input type="checkbox" id="onboard-email" />
-              <div>
-                <strong>Email (IMAP/SMTP)</strong>
-                <span>Read inbox and send emails (requires approval)</span>
-              </div>
-            </label>
-            <label class="toggle-row">
-              <input type="checkbox" id="onboard-calendar" disabled />
-              <div>
-                <strong>Calendar</strong>
-                <span class="muted">Coming soon</span>
-              </div>
-            </label>
-            <label class="toggle-row">
-              <input type="checkbox" id="onboard-messaging" disabled />
-              <div>
-                <strong>Messaging</strong>
-                <span class="muted">Coming soon</span>
-              </div>
-            </label>
+        <!-- Step 4: Privacy -->
+        <div class="onboard-page" data-page="4">
+          <h2>Your data stays on your device</h2>
+          <div class="info-box" style="margin-bottom:16px">
+            <p>Rovot runs entirely locally. Your conversations are stored in <code>~/.rovot/sessions/</code> and never leave your machine unless you configure a cloud model provider.</p>
+            <p style="margin-top:8px">Current binding: <strong>localhost:18789 — local only</strong></p>
           </div>
+          <label class="toggle-row" id="privacy-understand-row">
+            <input type="checkbox" id="onboard-privacy-understood" />
+            <div>
+              <strong>I understand</strong>
+              <span>My data stays on this device</span>
+            </div>
+          </label>
           <div class="btn-row">
-            <button class="btn secondary" data-prev="2">Back</button>
-            <button class="btn primary" id="onboard-finish">Get started</button>
+            <button class="btn secondary" id="onboard-back-4">Back</button>
+            <button class="btn primary" id="onboard-next-4" disabled>Continue</button>
           </div>
+        </div>
+
+        <!-- Step 5: Get started -->
+        <div class="onboard-page" data-page="5">
+          <h2>You're all set</h2>
+          <div id="step5-standard-content">
+            <div id="step5-download-section">
+              <p id="step5-model-label" style="margin-bottom:8px"></p>
+              <div class="catalog-progress" id="step5-progress-bar" style="margin-bottom:8px">
+                <div class="progress-bar"><div class="progress-fill" style="width:0%"></div></div>
+                <span class="progress-label">0%</span>
+              </div>
+              <p id="step5-status-label" class="settings-desc"></p>
+            </div>
+            <p id="step5-no-model" class="info-box hidden" style="margin-bottom:12px">You can download a model later in Settings → Models.</p>
+          </div>
+          <div id="step5-developer-content" class="hidden">
+            <p style="margin-bottom:12px;color:var(--text-secondary)">Your setup is complete. You're ready to start chatting!</p>
+          </div>
+          <button class="btn primary" id="onboard-finish" disabled>Start chatting</button>
         </div>
       </div>
     </div>
@@ -279,11 +346,30 @@
 
                 <!-- Models panel -->
                 <div id="settings-panel-models" class="settings-panel active">
+
+                  <!-- Standard mode simplified view -->
+                  <div id="standard-models-view" class="view-inner hidden">
+                    <h2>Models</h2>
+                    <div id="std-llama-banner-wrap"></div>
+                    <div class="settings-group">
+                      <h3>Current model</h3>
+                      <div id="std-model-status" class="info-box">--</div>
+                      <button class="btn primary" id="std-change-model-btn" style="margin-top:8px">Change model</button>
+                    </div>
+                    <div id="std-catalog-section" class="hidden">
+                      <div class="settings-group">
+                        <h3>Available models</h3>
+                        <p class="settings-desc">Models are downloaded from HuggingFace and stored in <code>~/.rovot/models/</code></p>
+                        <div id="std-catalog-list" class="catalog-list"></div>
+                      </div>
+                    </div>
+                  </div>
+
                   <div class="view-inner">
                     <h2>Models</h2>
 
                     <!-- ── Compute mode toggle ── -->
-                    <div class="settings-group">
+                    <div class="settings-group" id="sg-mode-toggle">
                       <h3>Compute mode</h3>
                       <div class="mode-toggle-row">
                         <button id="mode-builtin" class="mode-toggle-btn">
@@ -324,7 +410,7 @@
                     </div>
 
                     <!-- ── External provider settings ── -->
-                    <div class="settings-group">
+                    <div class="settings-group" id="sg-provider-routing">
                       <h3>Provider routing</h3>
                       <label>Provider mode
                         <select id="provider-mode">
@@ -351,7 +437,7 @@
                       </label>
                       <button id="save-provider-config" class="btn secondary">Save provider routing</button>
                     </div>
-                    <div class="settings-group">
+                    <div class="settings-group" id="sg-local-provider">
                       <h3>Local provider configuration</h3>
                       <label>Base URL
                         <input id="model-base-url" type="text" placeholder="http://localhost:1234/v1" />
@@ -361,7 +447,7 @@
                       </label>
                       <button id="save-model-config" class="btn primary">Save local provider</button>
                     </div>
-                    <div class="settings-group">
+                    <div class="settings-group" id="sg-detected-servers">
                       <h3>Detected servers</h3>
                       <div id="detected-models" class="probe-list"></div>
                       <button id="rescan-models" class="btn secondary" style="margin-top:10px">Rescan</button>
@@ -381,6 +467,16 @@
                 <div id="settings-panel-security" class="settings-panel">
                   <div class="view-inner">
                     <h2>Security</h2>
+                    <div class="settings-group">
+                      <h3>Interface mode</h3>
+                      <p class="settings-desc">Switching to Developer mode shows advanced settings. Standard mode is recommended for most users.</p>
+                      <label>Mode
+                        <select id="user-mode-select">
+                          <option value="standard">Standard</option>
+                          <option value="developer">Developer</option>
+                        </select>
+                      </label>
+                    </div>
                     <div class="settings-group">
                       <h3>Daemon binding</h3>
                       <div id="sec-binding" class="info-box">--</div>

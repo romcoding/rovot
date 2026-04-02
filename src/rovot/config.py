@@ -23,6 +23,11 @@ class ModelProviderMode(str, Enum):
     INTERNAL = "internal"
 
 
+class UserMode(str, Enum):
+    STANDARD = "standard"
+    DEVELOPER = "developer"
+
+
 class Settings(BaseSettings):
     model_config = {"env_prefix": "ROVOT_", "env_file": ".env", "env_file_encoding": "utf-8"}
 
@@ -84,6 +89,7 @@ class VoiceConfig(BaseModel):
 class AppConfig(BaseModel):
     onboarded: bool = False
     use_keychain: bool = True
+    user_mode: UserMode = UserMode.STANDARD
     security_mode: SecurityMode = SecurityMode.WORKSPACE
     allowed_domains: list[str] = Field(default_factory=list)
     model: ModelConfig = Field(default_factory=ModelConfig)
