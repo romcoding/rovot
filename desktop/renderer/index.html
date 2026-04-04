@@ -222,6 +222,7 @@
         <div class="topbar-right">
           <span id="model-indicator" class="indicator" title="Active model">--</span>
           <span id="privacy-indicator" class="indicator privacy-local" title="Privacy mode">Local</span>
+          <span id="mode-badge" class="indicator mode-badge-standard">Standard</span>
           <span id="connection-status" class="indicator">connecting...</span>
         </div>
       </header>
@@ -459,6 +460,10 @@
                 <div id="settings-panel-connectors" class="settings-panel">
                   <div class="view-inner">
                     <h2>Connectors</h2>
+                    <div style="margin-bottom:16px;display:flex;justify-content:space-between;align-items:center">
+                      <p class="settings-desc" style="margin:0">Toggle connectors on or off. Changes take effect immediately.</p>
+                      <button class="btn secondary btn-sm" id="reconfigure-connectors-btn">&#9881; Reconfigure via wizard</button>
+                    </div>
                     <div id="connectors-list" class="toggle-list"></div>
                   </div>
                 </div>

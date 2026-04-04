@@ -865,9 +865,21 @@ function applyUserMode(mode) {
     if (el) el.classList.toggle("mode-hidden", isStandard);
   });
 
-  // Hide the Security tab label in standard mode
-  const secTab = document.querySelector('.settings-tab[data-tab="security"]');
-  if (secTab) secTab.classList.toggle("mode-hidden", isStandard);
+  // In standard mode, hide specific Security sub-groups but keep the tab visible
+  ["sec-keychain-toggle", "sec-domains", "sec-connectors"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      const grp = el.closest(".settings-group");
+      if (grp) grp.classList.toggle("mode-hidden", isStandard);
+    }
+  });
+
+  // Update the mode badge in the topbar
+  const badge = document.getElementById("mode-badge");
+  if (badge) {
+    badge.textContent = mode === "developer" ? "Developer" : "Standard";
+    badge.className = "indicator " + (mode === "developer" ? "mode-badge-developer" : "mode-badge-standard");
+  }
 }
 
 // ── Approvals (inline in message stream) ──
@@ -1540,6 +1552,8 @@ function connectWs() {
         if (error_type === "llama_cpp_not_installed") {
           const cmd = install_cmd || "pip install llama-cpp-python";
           showToast(`llama-cpp-python is not installed. Install with: ${cmd}`, "error", 12000);
+          document.title = "Rovot — install llama-cpp-python";
+          setTimeout(() => { document.title = "Rovot"; }, 10000);
           checkLlamaCppStatus();
         } else {
           showToast(`Failed to load ${filename || "model"}: ${error || "unknown error"}`, "error", 6000);
@@ -2227,6 +2241,16 @@ async function loadConnectorsView() {
   ];
 
   list.innerHTML = "";
+
+  const reconfigBtn = document.getElementById("reconfigure-connectors-btn");
+  if (reconfigBtn && !reconfigBtn.dataset.init) {
+    reconfigBtn.dataset.init = "true";
+    reconfigBtn.addEventListener("click", () => {
+      onboardingEl.classList.remove("hidden");
+      goToOnboardStep(2);
+    });
+  }
+
   connectors.forEach((cn) => {
     const row = document.createElement("label");
     row.className = "toggle-row connector-toggle";
