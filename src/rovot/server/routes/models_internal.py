@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import platform
+import subprocess
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -346,7 +347,6 @@ async def recommend_model(
     except ImportError:
         # Fallback: /proc/meminfo on Linux, sysctl on macOS
         try:
-            import subprocess
             if platform.system() == "Linux":
                 with open("/proc/meminfo") as f:
                     for line in f:

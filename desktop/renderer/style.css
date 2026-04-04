@@ -1431,3 +1431,7 @@ select {
 .catalog-search-bar input:focus {
   border-color: var(--accent);
 }
+
+/* ── Mode badge ──────────────────────────────────────────────────────────────── */
+.mode-badge-standard { background: rgba(174,174,178,0.25); color: #aeaeb2; font-size:10px; }
+.mode-badge-developer { background: rgba(191,90,242,0.2); color: #bf5af2; font-size:10px; }
