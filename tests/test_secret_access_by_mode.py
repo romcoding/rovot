@@ -41,7 +41,7 @@ def test_build_agent_local_mode_skips_cloud_secret_lookup(tmp_path):
 
     state.secrets.get = fake_get  # type: ignore[method-assign]
 
-    _build_agent(state)
+    asyncio.run(_build_agent(state))
 
     assert state.config_store.config.model.api_key_secret in calls
     assert state.config_store.config.model.cloud_api_key_secret not in calls
@@ -59,7 +59,7 @@ def test_build_agent_auto_fallback_reads_cloud_secret(tmp_path):
 
     state.secrets.get = fake_get  # type: ignore[method-assign]
 
-    _build_agent(state)
+    asyncio.run(_build_agent(state))
 
     assert state.config_store.config.model.cloud_api_key_secret in calls
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -9,7 +10,10 @@ from rovot.connectors.email_imap_smtp import EmailConnector
 from rovot.connectors.filesystem import FileSystemConnector
 from rovot.secrets import SecretsStore
 
+logger = logging.getLogger(__name__)
+
 _browser_singleton: BrowserConnector | None = None
+_mcp_clients: list = []
 
 
 @dataclass
@@ -34,6 +38,37 @@ async def shutdown_browser() -> None:
     if _browser_singleton is not None:
         await _browser_singleton.close()
         _browser_singleton = None
+
+
+async def get_mcp_clients(cfg: AppConfig) -> list:
+    """Start and return active MCP clients. Clients are cached globally."""
+    global _mcp_clients
+    if _mcp_clients:
+        return _mcp_clients
+    from rovot.connectors.mcp_client import McpClient, McpServerConfig
+
+    clients = []
+    for server in cfg.connectors.mcp_servers:
+        if not server.enabled:
+            continue
+        client = McpClient(
+            McpServerConfig(name=server.name, command=server.command, env=server.env)
+        )
+        try:
+            await client.start()
+            clients.append(client)
+        except Exception as exc:
+            logger.warning("Failed to start MCP server '%s': %s", server.name, exc)
+    _mcp_clients = clients
+    return clients
+
+
+async def shutdown_mcp_clients() -> None:
+    """Call at daemon shutdown to stop all MCP server subprocesses."""
+    global _mcp_clients
+    for client in _mcp_clients:
+        await client.stop()
+    _mcp_clients = []
 
 
 def load_connectors(cfg: AppConfig, workspace: Path, secrets: SecretsStore) -> LoadedConnectors:

@@ -70,6 +70,13 @@ class MessagingConnectorConfig(BaseModel):
     twilio_auth_token_secret: str = "twilio.auth_token"
 
 
+class McpServerEntry(BaseModel):
+    name: str
+    command: list[str]
+    env: dict[str, str] = Field(default_factory=dict)
+    enabled: bool = True
+
+
 class ConnectorsConfig(BaseModel):
     filesystem_enabled: bool = True
     email: EmailConnectorConfig = Field(default_factory=EmailConnectorConfig)
@@ -77,6 +84,7 @@ class ConnectorsConfig(BaseModel):
     messaging: MessagingConnectorConfig = Field(default_factory=MessagingConnectorConfig)
     browser_enabled: bool = False
     macos_automation_enabled: bool = False
+    mcp_servers: list[McpServerEntry] = Field(default_factory=list)
 
 
 class VoiceConfig(BaseModel):

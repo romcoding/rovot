@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from rovot.agent.context import ContextBuilder, Message, estimate_tokens
+from rovot.agent.context import ContextBuilder, ImageContent, Message, estimate_tokens
 from rovot.agent.loop import AgentLoop
 from rovot.agent.sessions import SessionStore
 from rovot.agent.tools.builtin_browser import register_browser_tools
@@ -17,9 +17,11 @@ from rovot.agent.tools.builtin_email import register_email_tools
 from rovot.agent.tools.builtin_exec import ExecConfig, register_exec_tool
 from rovot.agent.tools.builtin_fs import register_fs_tools
 from rovot.agent.tools.builtin_macos import register_macos_tools
+from rovot.agent.tools.builtin_memory import register_memory_tools
+from rovot.agent.tools.builtin_mcp import register_mcp_tools
 from rovot.agent.tools.builtin_web import register_web_tools
 from rovot.agent.tools.registry import ToolRegistry
-from rovot.connectors.loader import load_connectors
+from rovot.connectors.loader import get_mcp_clients, load_connectors
 from rovot.config import ModelProviderMode
 from rovot.policy.engine import AuthContext
 from rovot.providers.openai_compat import OpenAICompatProvider
@@ -31,9 +33,15 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["chat"])
 
 
+class ImageInput(BaseModel):
+    base64_data: str
+    media_type: str = "image/png"
+
+
 class ChatRequest(BaseModel):
     message: str
     session_id: str | None = None
+    images: list[ImageInput] = []
 
 
 class ContinueRequest(BaseModel):
@@ -55,7 +63,7 @@ class SessionStatsResponse(BaseModel):
     trimmed: bool
 
 
-def _build_agent(state: AppState) -> AgentLoop:
+async def _build_agent(state: AppState) -> AgentLoop:
     cfg = state.config_store.config
     settings = state.settings
     model_key = state.secrets.get(cfg.model.api_key_secret, source="chat.local_api_key") or ""
@@ -95,6 +103,13 @@ def _build_agent(state: AppState) -> AgentLoop:
     register_email_tools(tools, connectors.email)
     register_browser_tools(tools, connectors.browser)
     register_macos_tools(tools, enabled=cfg.connectors.macos_automation_enabled)
+    if cfg.connectors.mcp_servers:
+        try:
+            mcp_clients = await get_mcp_clients(cfg)
+            register_mcp_tools(tools, mcp_clients)
+        except Exception as exc:
+            logger.warning("MCP tool registration failed: %s", exc)
+    register_memory_tools(tools)
     return AgentLoop(
         provider=provider,
         tools=tools,
@@ -116,9 +131,17 @@ async def chat(
     store = SessionStore(root=settings.data_dir / "sessions")
     session = store.create() if not req.session_id else store.get(req.session_id)
     history = session.read_all()
-    history.append(Message(role="user", content=req.message))
-    session.append(Message(role="user", content=req.message))
-    agent = _build_agent(state)
+    user_msg = Message(
+        role="user",
+        content=req.message,
+        images=[
+            ImageContent(base64_data=img.base64_data, media_type=img.media_type)
+            for img in req.images
+        ],
+    )
+    history.append(user_msg)
+    session.append(user_msg)
+    agent = await _build_agent(state)
     try:
         resp = await agent.run(auth=auth, session_id=session.id, history=history)
     except Exception as exc:
@@ -154,9 +177,17 @@ async def chat_stream(
     store = SessionStore(root=settings.data_dir / "sessions")
     session = store.create() if not req.session_id else store.get(req.session_id)
     history = session.read_all()
-    history.append(Message(role="user", content=req.message))
-    session.append(Message(role="user", content=req.message))
-    agent = _build_agent(state)
+    user_msg = Message(
+        role="user",
+        content=req.message,
+        images=[
+            ImageContent(base64_data=img.base64_data, media_type=img.media_type)
+            for img in req.images
+        ],
+    )
+    history.append(user_msg)
+    session.append(user_msg)
+    agent = await _build_agent(state)
 
     async def event_generator() -> AsyncIterator[str]:
         full_reply = ""
@@ -218,7 +249,7 @@ async def chat_continue(
     store = SessionStore(root=settings.data_dir / "sessions")
     session = store.get(req.session_id)
     history = session.read_all()
-    agent = _build_agent(state)
+    agent = await _build_agent(state)
 
     if req.approval_id:
         a = state.approvals.get(req.approval_id)

@@ -354,6 +354,7 @@ function activateSettingsTab(tab) {
   if (tab === "models")     loadModelsView();
   if (tab === "connectors") loadConnectorsView();
   if (tab === "security")   loadSecurityView();
+  if (tab === "memory")     loadMemoryView();
   if (tab === "logs")       loadLogsView();
 }
 
@@ -1131,14 +1132,81 @@ function renderToolSteps(toolCalls) {
   return section;
 }
 
+// ── Image attachments ──
+
+const attachedImages = [];  // {base64: string, mediaType: string}
+
+function addImagePreview(base64, mediaType, previewDataUrl) {
+  attachedImages.push({ base64, mediaType });
+  const strip = document.getElementById("image-previews");
+  const wrap = document.createElement("div");
+  wrap.className = "image-preview-thumb";
+  const idx = attachedImages.length - 1;
+  wrap.innerHTML = `<img src="${previewDataUrl}" alt="attached image" /><button class="image-remove-btn" data-idx="${idx}" title="Remove">&#x2715;</button>`;
+  wrap.querySelector(".image-remove-btn").addEventListener("click", (e) => {
+    const i = parseInt(e.currentTarget.dataset.idx);
+    attachedImages.splice(i, 1);
+    wrap.remove();
+    // Re-index remaining buttons
+    strip.querySelectorAll(".image-remove-btn").forEach((btn, j) => { btn.dataset.idx = j; });
+  });
+  strip.appendChild(wrap);
+}
+
+function clearImagePreviews() {
+  attachedImages.length = 0;
+  document.getElementById("image-previews").innerHTML = "";
+}
+
+document.getElementById("attach-image").addEventListener("click", () => {
+  document.getElementById("image-file-input").click();
+});
+
+document.getElementById("image-file-input").addEventListener("change", (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (evt) => {
+    const dataUrl = evt.target.result;
+    const base64 = dataUrl.split(",")[1];
+    addImagePreview(base64, file.type || "image/png", dataUrl);
+  };
+  reader.readAsDataURL(file);
+  e.target.value = "";
+});
+
+document.addEventListener("paste", (e) => {
+  const items = e.clipboardData?.items;
+  if (!items) return;
+  for (const item of items) {
+    if (item.type.startsWith("image/")) {
+      const file = item.getAsFile();
+      if (!file) continue;
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        const dataUrl = evt.target.result;
+        const base64 = dataUrl.split(",")[1];
+        addImagePreview(base64, item.type, dataUrl);
+      };
+      reader.readAsDataURL(file);
+    }
+  }
+});
+
 // ── Chat ──
 
 async function sendMessage() {
   const msg = inputEl.value.trim();
   if (!msg || isSending) return;
 
+  const imagesToSend = attachedImages.map((img) => ({
+    base64_data: img.base64,
+    media_type: img.mediaType,
+  }));
+
   inputEl.value = "";
   resetInputHeight();
+  clearImagePreviews();
   addMsg("user", msg);
   addTimelineEvent("chat", "Message sent");
   setSendingState(true);
@@ -1153,7 +1221,7 @@ async function sendMessage() {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${getToken()}`,
       },
-      body: JSON.stringify({ message: msg, session_id: currentSessionId }),
+      body: JSON.stringify({ message: msg, session_id: currentSessionId, images: imagesToSend }),
       signal: streamAbortController.signal,
     });
 
@@ -2270,6 +2338,59 @@ async function loadConnectorsView() {
     row.appendChild(info);
     list.appendChild(row);
   });
+
+  // ── MCP Servers section ──
+  let mcpSection = document.getElementById("mcp-section");
+  if (!mcpSection) {
+    mcpSection = document.createElement("div");
+    mcpSection.id = "mcp-section";
+    mcpSection.className = "settings-group";
+    list.parentElement.appendChild(mcpSection);
+  }
+  const mcpServers = cachedConfig?.connectors?.mcp_servers || [];
+  mcpSection.innerHTML = `
+    <h3>MCP Servers</h3>
+    <p class="settings-desc">Connect to local MCP servers (Model Context Protocol).
+    Each server exposes tools the agent can use. Commands are run as subprocesses.</p>
+    <div id="mcp-servers-list"></div>
+    <div style="margin-top:10px;display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap">
+      <input id="mcp-name" type="text" placeholder="Server name (e.g. filesystem)"
+        style="flex:1;min-width:120px;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg);color:var(--text);font-size:13px;outline:none" />
+      <input id="mcp-cmd" type="text" placeholder="Command (e.g. npx -y @modelcontextprotocol/server-filesystem ~/workspace)"
+        style="flex:3;min-width:200px;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg);color:var(--text);font-size:13px;outline:none" />
+      <button class="btn primary btn-sm" id="mcp-add-btn">Add server</button>
+    </div>`;
+
+  const mcpList = document.getElementById("mcp-servers-list");
+  if (mcpServers.length === 0) {
+    mcpList.innerHTML = '<div class="info-box">No MCP servers configured.</div>';
+  } else {
+    mcpServers.forEach((s, i) => {
+      const row = document.createElement("div");
+      row.className = "probe-item found";
+      row.style.flexWrap = "wrap";
+      row.innerHTML = `<span class="probe-label"><strong>${escapeHtml(s.name)}</strong> &mdash; ${escapeHtml(s.command.join(" "))}</span>
+        <button class="btn danger btn-sm" data-idx="${i}">Remove</button>`;
+      row.querySelector("button").addEventListener("click", async () => {
+        const servers = [...(cachedConfig?.connectors?.mcp_servers || [])];
+        servers.splice(i, 1);
+        await api("/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: "connectors.mcp_servers", value: servers }) });
+        await refreshConfig();
+        loadConnectorsView();
+      });
+      mcpList.appendChild(row);
+    });
+  }
+
+  document.getElementById("mcp-add-btn").addEventListener("click", async () => {
+    const name = document.getElementById("mcp-name").value.trim();
+    const cmd  = document.getElementById("mcp-cmd").value.trim();
+    if (!name || !cmd) return;
+    const servers = [...(cachedConfig?.connectors?.mcp_servers || []), { name, command: cmd.split(" "), env: {}, enabled: true }];
+    await api("/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: "connectors.mcp_servers", value: servers }) });
+    await refreshConfig();
+    loadConnectorsView();
+  });
 }
 
 // ── Security view ──
@@ -2367,6 +2488,111 @@ document.getElementById("reset-system-prompt").onclick = async () => {
   document.getElementById("system-prompt-editor").value = "";
   showToast("System prompt reset to default.", "success", 2500);
 };
+
+// ── Memory view ──
+
+let _memoryEditPath = null;
+
+async function loadMemoryView() {
+  const memList = document.getElementById("memory-list");
+  const editor  = document.getElementById("memory-editor");
+  if (!memList) return;
+
+  // Hide editor, load list
+  if (editor) editor.classList.add("hidden");
+  _memoryEditPath = null;
+
+  memList.innerHTML = '<div class="info-box">Loading…</div>';
+  try {
+    const r = await api("/memory");
+    if (!r.ok) { memList.innerHTML = '<div class="info-box">Could not load memory files.</div>'; return; }
+    const data = await r.json();
+    const mems = data.memories || [];
+    if (mems.length === 0) {
+      memList.innerHTML = '<div class="info-box">No memory files yet. Click "+ New file" to create one, or ask the agent to remember something.</div>';
+    } else {
+      memList.innerHTML = "";
+      mems.forEach((m) => {
+        const row = document.createElement("div");
+        row.className = "probe-item found";
+        row.style.cursor = "pointer";
+        row.innerHTML = `<span class="probe-label"><strong>${escapeHtml(m.path)}</strong> &nbsp;<span style="color:var(--text-secondary);font-size:12px">${m.size_bytes} B</span></span>
+          <span class="probe-label" style="font-size:12px;color:var(--text-secondary);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(m.content_preview)}</span>`;
+        row.addEventListener("click", () => _openMemoryEditor(m.path));
+        memList.appendChild(row);
+      });
+    }
+  } catch (_) {
+    memList.innerHTML = '<div class="info-box">Memory endpoint unavailable.</div>';
+  }
+
+  const newBtn = document.getElementById("memory-new-btn");
+  if (newBtn && !newBtn.dataset.init) {
+    newBtn.dataset.init = "true";
+    newBtn.addEventListener("click", () => {
+      const filename = prompt("Memory file name (e.g. preferences.md):");
+      if (!filename) return;
+      _openMemoryEditor(filename, "");
+    });
+  }
+}
+
+async function _openMemoryEditor(path, initialContent) {
+  const editor  = document.getElementById("memory-editor");
+  const titleEl = document.getElementById("memory-editor-title");
+  const contentEl = document.getElementById("memory-editor-content");
+  if (!editor) return;
+
+  _memoryEditPath = path;
+  titleEl.textContent = `Edit: ${path}`;
+
+  if (initialContent !== undefined) {
+    contentEl.value = initialContent;
+  } else {
+    try {
+      const r = await api(`/memory/${encodeURIComponent(path)}`);
+      if (r.ok) {
+        const d = await r.json();
+        contentEl.value = d.content || "";
+      } else {
+        contentEl.value = "";
+      }
+    } catch (_) {
+      contentEl.value = "";
+    }
+  }
+  editor.classList.remove("hidden");
+  contentEl.focus();
+
+  // Wire save/delete/cancel (idempotent via one-time flag)
+  const saveBtn   = document.getElementById("memory-save-btn");
+  const deleteBtn = document.getElementById("memory-delete-btn");
+  const cancelBtn = document.getElementById("memory-cancel-btn");
+  if (!saveBtn.dataset.init) {
+    saveBtn.dataset.init = "true";
+    saveBtn.addEventListener("click", async () => {
+      if (!_memoryEditPath) return;
+      await api(`/memory/${encodeURIComponent(_memoryEditPath)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: contentEl.value }),
+      });
+      showToast("Memory saved.", "success", 2000);
+      loadMemoryView();
+    });
+    deleteBtn.addEventListener("click", async () => {
+      if (!_memoryEditPath) return;
+      if (!confirm(`Delete memory file "${_memoryEditPath}"?`)) return;
+      await api(`/memory/${encodeURIComponent(_memoryEditPath)}`, { method: "DELETE" });
+      showToast("Memory deleted.", "success", 2000);
+      loadMemoryView();
+    });
+    cancelBtn.addEventListener("click", () => {
+      editor.classList.add("hidden");
+      _memoryEditPath = null;
+    });
+  }
+}
 
 // ── Logs view ──
 

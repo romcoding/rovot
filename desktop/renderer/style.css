@@ -1435,3 +1435,43 @@ select {
 /* ── Mode badge ──────────────────────────────────────────────────────────────── */
 .mode-badge-standard { background: rgba(174,174,178,0.25); color: #aeaeb2; font-size:10px; }
 .mode-badge-developer { background: rgba(191,90,242,0.2); color: #bf5af2; font-size:10px; }
+
+/* ── Image attachment preview strip ─────────────────────────────────────────── */
+.image-preview-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 0;
+}
+.image-preview-strip:empty { display: none; }
+
+.image-preview-thumb {
+  position: relative;
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.image-preview-thumb img {
+  display: block;
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+}
+.image-remove-btn {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.55);
+  color: #fff;
+  font-size: 10px;
+  line-height: 18px;
+  text-align: center;
+  cursor: pointer;
+  padding: 0;
+}
+.image-remove-btn:hover { background: rgba(200,50,50,0.85); }

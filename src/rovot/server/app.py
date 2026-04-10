@@ -12,13 +12,13 @@ from fastapi.responses import JSONResponse
 from rovot import __version__
 from rovot.audit import AuditLogger
 from rovot.config import ConfigStore, Settings
-from rovot.connectors.loader import shutdown_browser
+from rovot.connectors.loader import shutdown_browser, shutdown_mcp_clients
 from rovot.policy.approvals import ApprovalManager
 from rovot.policy.engine import PolicyEngine
 from rovot.secrets import SecretsStore
 from rovot.server.deps import AppState, ensure_auth_token
 from rovot.server.ws import WebSocketHub
-from rovot.server.routes import approvals, audit, channels, chat, config, health, models, models_internal, voice
+from rovot.server.routes import approvals, audit, channels, chat, config, health, mcp, memory, models, models_internal, voice
 
 logger = logging.getLogger("rovot.server")
 
@@ -27,6 +27,7 @@ logger = logging.getLogger("rovot.server")
 async def _lifespan(app: FastAPI):  # type: ignore[type-arg]
     yield
     await shutdown_browser()
+    await shutdown_mcp_clients()
 
 
 def create_app() -> FastAPI:
@@ -94,6 +95,8 @@ def create_app() -> FastAPI:
     app.include_router(models.router)
     app.include_router(models_internal.router)
     app.include_router(channels.router)
+    app.include_router(mcp.router)
+    app.include_router(memory.router)
 
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:

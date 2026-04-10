@@ -6,7 +6,7 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
-from rovot.agent.context import Message
+from rovot.agent.context import ImageContent, Message
 
 
 @dataclass
@@ -20,6 +20,10 @@ class Session:
             "ts": int(time.time() * 1000),
             "role": msg.role,
             "content": msg.content,
+            "images": [
+                {"base64_data": img.base64_data, "media_type": img.media_type}
+                for img in msg.images
+            ],
             "tool_call_id": msg.tool_call_id,
             "tool_calls": msg.tool_calls,
         }
@@ -34,10 +38,18 @@ class Session:
             if not line.strip():
                 continue
             rec = json.loads(line)
+            images = [
+                ImageContent(
+                    base64_data=img["base64_data"],
+                    media_type=img.get("media_type", "image/png"),
+                )
+                for img in rec.get("images") or []
+            ]
             out.append(
                 Message(
                     role=rec["role"],
                     content=rec["content"],
+                    images=images,
                     tool_call_id=rec.get("tool_call_id"),
                     tool_calls=rec.get("tool_calls") or [],
                 )
