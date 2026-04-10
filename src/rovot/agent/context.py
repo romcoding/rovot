@@ -6,9 +6,18 @@ from typing import Any
 
 
 @dataclass
+class ImageContent:
+    """Base64-encoded image for vision-capable models."""
+
+    base64_data: str
+    media_type: str = "image/png"  # image/png | image/jpeg | image/webp
+
+
+@dataclass
 class Message:
     role: str
     content: str
+    images: list[ImageContent] = field(default_factory=list)
     tool_call_id: str | None = None
     tool_calls: list[dict] = field(default_factory=list)
 
@@ -76,6 +85,16 @@ class ContextBuilder:
             except Exception:
                 pass  # fall back to default silently
 
+        # Inject persistent memory files into the system prompt
+        try:
+            from rovot.agent.memory import build_memory_context
+
+            memory_context = build_memory_context()
+            if memory_context:
+                self._system_prompt = self._system_prompt + memory_context
+        except Exception:
+            pass  # memory directory may not exist yet
+
     def build(
         self, history: list[Message], tool_definitions: list[dict[str, Any]] | None
     ) -> Context:
@@ -99,7 +118,21 @@ class ContextBuilder:
     def to_provider_messages(ctx: Context) -> list[dict[str, Any]]:
         msgs: list[dict[str, Any]] = [{"role": "system", "content": ctx.system_prompt}]
         for m in ctx.messages:
-            d: dict[str, Any] = {"role": m.role, "content": m.content}
+            if m.images:
+                # Multi-modal content array format (OpenAI vision API)
+                content_parts: list[dict[str, Any]] = [{"type": "text", "text": m.content}]
+                for img in m.images:
+                    content_parts.append(
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{img.media_type};base64,{img.base64_data}"
+                            },
+                        }
+                    )
+                d: dict[str, Any] = {"role": m.role, "content": content_parts}
+            else:
+                d = {"role": m.role, "content": m.content}
             if m.role == "tool" and m.tool_call_id:
                 d["tool_call_id"] = m.tool_call_id
             if m.role == "assistant" and m.tool_calls:

@@ -20,6 +20,13 @@ class InternalModelProvider:
     """
     Wraps llama-cpp-python to provide OpenAI-compatible chat completions
     running entirely in-process.
+
+    # TODO (Phase 6): Implement TurboQuant KV cache compression when llama.cpp merges
+    # support. Track: https://github.com/ggml-org/llama.cpp/discussions/20969
+    # TurboQuant (Google Research, arXiv:2504.19874, ICLR 2026) compresses the KV cache
+    # to 3-4 bits with zero accuracy loss on models >= 3B params, enabling 6x longer
+    # context windows on the same hardware. No official code released yet (expected Q2 2026).
+    # When available, expose as: n_kv_cache_bits: int = 0  (0 = disabled, 4 = 4-bit, 3 = 3-bit)
     """
 
     def __init__(self):

@@ -311,9 +311,19 @@
                 <div id="approvals" style="display:none"></div>
 
                 <div id="composer">
+                  <!-- Image attachment previews -->
+                  <div id="image-previews" class="image-preview-strip"></div>
                   <!-- rows="1" + JS auto-resize -->
                   <textarea id="input" rows="1" placeholder="Type a message… (Enter to send, Shift+Enter for newline)"></textarea>
                   <div class="composer-actions">
+                    <button id="attach-image" class="btn icon" title="Attach image (or paste with Ctrl/Cmd+V)">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="18" height="18" rx="2"/>
+                        <circle cx="8.5" cy="8.5" r="1.5"/>
+                        <polyline points="21 15 16 10 5 21"/>
+                      </svg>
+                    </button>
+                    <input type="file" id="image-file-input" accept="image/*" style="display:none" />
                     <button id="record" class="btn icon" title="Voice input — push to talk">
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
                     </button>
@@ -341,6 +351,7 @@
                 <button class="settings-tab active" data-tab="models">Models</button>
                 <button class="settings-tab" data-tab="connectors">Connectors</button>
                 <button class="settings-tab" data-tab="security">Security</button>
+                <button class="settings-tab" data-tab="memory">Memory</button>
                 <button class="settings-tab" data-tab="logs">Logs</button>
               </nav>
               <div class="settings-content">
@@ -526,6 +537,33 @@
                     <div class="settings-group">
                       <h3>Connector permissions</h3>
                       <div id="sec-connectors" class="info-box">--</div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Memory panel -->
+                <div id="settings-panel-memory" class="settings-panel">
+                  <div class="view-inner">
+                    <h2>Workspace Memory</h2>
+                    <p class="settings-desc">Persistent markdown files the agent reads at the start of every session.
+                    The agent can also write to these files using the <code>memory.write</code> tool.</p>
+                    <div class="settings-group">
+                      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+                        <h3>Stored memories</h3>
+                        <button class="btn secondary btn-sm" id="memory-new-btn">+ New file</button>
+                      </div>
+                      <div id="memory-list"></div>
+                    </div>
+                    <div id="memory-editor" class="hidden">
+                      <div class="settings-group">
+                        <h3 id="memory-editor-title">Edit memory</h3>
+                        <textarea id="memory-editor-content" rows="12" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg);color:var(--text);font-size:13px;font-family:inherit;resize:vertical;outline:none"></textarea>
+                        <div class="btn-row" style="margin-top:8px;justify-content:flex-start;gap:8px">
+                          <button class="btn primary" id="memory-save-btn">Save</button>
+                          <button class="btn danger btn-sm" id="memory-delete-btn">Delete</button>
+                          <button class="btn secondary" id="memory-cancel-btn">Cancel</button>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>

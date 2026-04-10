@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -42,6 +43,20 @@ class ProviderRouter:
             if not (self.fallback_to_cloud and self.cloud):
                 raise
             return await self.cloud.chat(messages, tools)
+
+    async def stream(
+        self, messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None = None
+    ) -> AsyncIterator[str]:
+        """Stream tokens from the active provider."""
+        if self.mode == ModelProviderMode.INTERNAL:
+            async for chunk in self.internal.stream(messages, tools):
+                yield chunk
+            return
+
+        # For external providers, use OpenAICompatProvider.chat_stream()
+        provider = self.cloud if self.mode == ModelProviderMode.CLOUD else self.local
+        async for chunk in provider.chat_stream(messages, tools):
+            yield chunk
 
     async def list_models(self) -> list[str]:
         if self.mode == ModelProviderMode.INTERNAL:

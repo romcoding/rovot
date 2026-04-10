@@ -6,6 +6,7 @@ loop is decoupled from any specific API.
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
@@ -24,6 +25,12 @@ class Provider(Protocol):
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
     ) -> ChatResponse: ...
+
+    async def stream(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+    ) -> AsyncIterator[str]: ...
 
     async def list_models(self) -> list[str]: ...
 

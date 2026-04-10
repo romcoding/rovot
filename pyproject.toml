@@ -22,6 +22,8 @@ dependencies = [
     "playwright>=1.40",
     # Improves browser content extraction quality
     "trafilatura>=1.6",
+    # MCP (Model Context Protocol) client — connect to local MCP servers
+    "mcp>=1.0",
 ]
 
 [project.optional-dependencies]

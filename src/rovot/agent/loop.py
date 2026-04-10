@@ -87,21 +87,45 @@ class AgentLoop:
             tool_defs = ctx.tool_definitions or None
 
             try:
-                response = await self._provider.chat(
-                    messages=provider_msgs,
-                    tools=tool_defs,
-                )
+                if hasattr(self._provider, "stream") and self._provider.supports_streaming():
+                    # True token-by-token streaming from the provider
+                    full_content = ""
+                    async for chunk in self._provider.stream(
+                        messages=provider_msgs, tools=tool_defs
+                    ):
+                        full_content += chunk
+                        yield {"type": "token", "content": chunk}
+                        await asyncio.sleep(0)
+                    # After streaming, do a non-streaming call only when tool
+                    # use is possible (external providers); InternalProvider
+                    # has supports_tools()=False so we skip the second call.
+                    if tool_defs and self._provider.supports_tools():
+                        response = await self._provider.chat(
+                            messages=provider_msgs, tools=tool_defs
+                        )
+                    else:
+                        if not full_content:
+                            response = await self._provider.chat(
+                                messages=provider_msgs, tools=None
+                            )
+                            full_content = response.content or ""
+                        # Lightweight response object; tool_calls is always []
+                        response = type("_R", (), {"content": full_content, "tool_calls": []})()
+                else:
+                    # Fallback: non-streaming providers (word-split fake stream)
+                    response = await self._provider.chat(
+                        messages=provider_msgs,
+                        tools=tool_defs,
+                    )
+                    if response.content:
+                        words = response.content.split(" ")
+                        for i, word in enumerate(words):
+                            chunk = word + (" " if i < len(words) - 1 else "")
+                            yield {"type": "token", "content": chunk}
+                            await asyncio.sleep(0)
             except Exception as exc:
                 yield {"type": "error", "message": str(exc)}
                 return
-
-            # Emit content as word-sized chunks for streaming UX
-            if response.content:
-                words = response.content.split(" ")
-                for i, word in enumerate(words):
-                    chunk = word + (" " if i < len(words) - 1 else "")
-                    yield {"type": "token", "content": chunk}
-                    await asyncio.sleep(0)
 
             if not response.tool_calls:
                 yield {
