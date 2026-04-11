@@ -222,7 +222,9 @@
         <div class="topbar-right">
           <span id="model-indicator" class="indicator" title="Active model">--</span>
           <span id="privacy-indicator" class="indicator privacy-local" title="Privacy mode">Local</span>
-          <span id="mode-badge" class="indicator mode-badge-standard">Standard</span>
+          <button id="mode-badge" class="indicator mode-badge-standard"
+                  title="Click to switch between Standard and Developer mode"
+                  style="cursor:pointer;border:none;font-size:10px">Standard</button>
           <span id="connection-status" class="indicator">connecting...</span>
         </div>
       </header>
@@ -584,6 +586,33 @@
           </section>
 
         </main>
+      </div>
+    </div>
+
+    <!-- Mode switch modal -->
+    <div id="mode-modal" class="overlay hidden" style="z-index:2000">
+      <div class="onboard-card" style="width:360px;padding:28px">
+        <h2 style="margin-bottom:8px">Interface mode</h2>
+        <p style="color:var(--text-secondary);margin-bottom:20px;font-size:13px">
+          Standard mode is simpler and recommended for most users.<br>
+          Developer mode exposes all model provider settings.
+        </p>
+        <div class="option-cards">
+          <label class="option-card" id="mode-modal-standard-card">
+            <input type="radio" name="modal-mode" value="standard" />
+            <strong>Standard</strong>
+            <span>Simplified interface. Just download a model and start chatting.</span>
+          </label>
+          <label class="option-card" id="mode-modal-developer-card">
+            <input type="radio" name="modal-mode" value="developer" />
+            <strong>Developer</strong>
+            <span>Full control over model providers, API keys, and advanced settings.</span>
+          </label>
+        </div>
+        <div class="btn-row">
+          <button class="btn secondary" id="mode-modal-cancel">Cancel</button>
+          <button class="btn primary" id="mode-modal-apply">Apply</button>
+        </div>
       </div>
     </div>
 

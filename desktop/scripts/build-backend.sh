@@ -40,6 +40,11 @@ PYINSTALLER_ARGS=(
   --hidden-import playwright.async_api
   --collect-all playwright
   --add-data "$("$PYTHON_BIN" -c 'import playwright, os; print(os.path.join(os.path.dirname(playwright.__file__), "driver"))'):playwright/driver"
+  --collect-all llama_cpp
+  --hidden-import llama_cpp
+  --hidden-import llama_cpp.llama
+  --hidden-import llama_cpp.llama_chat_format
+  --hidden-import llama_cpp.llama_grammar
   "$ROOT/src/rovot/cli.py"
 )
 
@@ -48,9 +53,43 @@ if [[ "$(uname)" == "Darwin" && -n "$ARCH" ]]; then
   echo "Building for macOS architecture: $ARCH"
 fi
 
+# Install llama-cpp-python with Metal support for Apple Silicon.
+# On Intel Macs, fall back to standard CPU build.
+echo "Installing llama-cpp-python..."
+MACHINE="$(uname -m)"
+if [[ "$MACHINE" == "arm64" || "$ARCH" == "arm64" || "$ARCH" == "universal2" ]]; then
+  echo "Apple Silicon detected — building with Metal GPU support"
+  CMAKE_ARGS="-DGGML_METAL=on" FORCE_CMAKE=1 "$PYTHON_BIN" -m pip install \
+    llama-cpp-python --no-cache-dir --force-reinstall
+else
+  echo "Intel Mac — building CPU-only llama-cpp-python"
+  "$PYTHON_BIN" -m pip install llama-cpp-python --no-cache-dir
+fi
+
 # Install Playwright browsers for bundling
 echo "Installing Playwright Chromium..."
 "$PYTHON_BIN" -m playwright install chromium
+
+# Add Metal shader library for Apple Silicon
+if [[ "$(uname -m)" == "arm64" || "$ARCH" == "arm64" || "$ARCH" == "universal2" ]]; then
+  LLAMA_CPP_DIR="$("$PYTHON_BIN" -c 'import llama_cpp, os; print(os.path.dirname(llama_cpp.__file__))' 2>/dev/null || echo "")"
+  if [[ -n "$LLAMA_CPP_DIR" ]]; then
+    # Include the ggml-metal.metal shader file and any compiled .metallib
+    for metal_file in "$LLAMA_CPP_DIR"/*.metal "$LLAMA_CPP_DIR"/*.metallib; do
+      if [[ -f "$metal_file" ]]; then
+        PYINSTALLER_ARGS+=("--add-data" "$metal_file:.")
+        echo "Bundling Metal file: $metal_file"
+      fi
+    done
+    # Include any .dylib files (ggml backends)
+    for dylib in "$LLAMA_CPP_DIR"/*.dylib; do
+      if [[ -f "$dylib" ]]; then
+        PYINSTALLER_ARGS+=("--add-binary" "$dylib:.")
+        echo "Bundling dylib: $dylib"
+      fi
+    done
+  fi
+fi
 
 cd "$ROOT"
 if ! "$PYTHON_BIN" -m PyInstaller --version >/dev/null 2>&1; then
