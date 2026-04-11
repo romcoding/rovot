@@ -164,12 +164,30 @@ def _detect_llama_cpp_status() -> dict[str, Any]:
         import llama_cpp  # type: ignore[import]
 
         version = getattr(llama_cpp, "__version__", "unknown")
-        # llama_cpp.llama_supports_gpu_offload() is available in recent builds
         supports_gpu = False
         try:
             supports_gpu = bool(llama_cpp.llama_supports_gpu_offload())
         except Exception:
-            pass
+            # Older versions don't have this function; check for Metal .metallib
+            import os
+            import sys
+            llama_dir = os.path.dirname(llama_cpp.__file__)
+            # Check if any Metal artifacts are present (bundled or installed)
+            metal_present = any(
+                f.endswith((".metal", ".metallib"))
+                for f in os.listdir(llama_dir)
+                if os.path.isfile(os.path.join(llama_dir, f))
+            )
+            # Also check PyInstaller _MEIPASS location
+            meipass = getattr(sys, "_MEIPASS", None)
+            if meipass:
+                metal_present = metal_present or any(
+                    f.endswith((".metal", ".metallib"))
+                    for f in os.listdir(meipass)
+                    if os.path.isfile(os.path.join(meipass, f))
+                )
+            supports_gpu = metal_present and platform.system() == "Darwin"
+
         return {
             "installed": True,
             "version": version,

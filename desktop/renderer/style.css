@@ -1436,6 +1436,15 @@ select {
 .mode-badge-standard { background: rgba(174,174,178,0.25); color: #aeaeb2; font-size:10px; }
 .mode-badge-developer { background: rgba(191,90,242,0.2); color: #bf5af2; font-size:10px; }
 
+#mode-badge {
+  cursor: pointer;
+  transition: opacity 0.15s;
+  background: none;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+#mode-badge:hover { opacity: 0.75; }
+
 /* ── Image attachment preview strip ─────────────────────────────────────────── */
 .image-preview-strip {
   display: flex;

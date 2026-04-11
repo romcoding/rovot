@@ -880,6 +880,7 @@ function applyUserMode(mode) {
   if (badge) {
     badge.textContent = mode === "developer" ? "Developer" : "Standard";
     badge.className = "indicator " + (mode === "developer" ? "mode-badge-developer" : "mode-badge-standard");
+    badge.title = "Click to switch mode";
   }
 }
 
@@ -1709,25 +1710,41 @@ async function checkLlamaCppStatus() {
   try {
     const r = await api("/models/internal/status");
     const data = await r.json();
-    if (data.installed) return; // nothing to show
+    if (data.installed) return; // All good, no banner needed
 
     const banner = document.createElement("div");
     banner.id = "llama-cpp-banner";
     banner.className = "llama-cpp-banner";
     const isAppleSilicon = data.is_apple_silicon;
     const cmd = data.install_cmd || "pip install llama-cpp-python";
-    banner.innerHTML = `
-      <div class="llama-cpp-banner-icon">⚠</div>
-      <div class="llama-cpp-banner-body">
-        <strong>llama-cpp-python not installed</strong>
-        <p>Built-in inference requires llama-cpp-python.
-        ${isAppleSilicon ? "You're on Apple Silicon — use the Metal build for GPU acceleration:" : "Install with pip:"}</p>
-        <div class="llama-cpp-cmd-wrap">
-          <code id="llama-install-cmd">${escapeHtml(cmd)}</code>
-          <button class="btn secondary btn-sm" onclick="copyInstallCmd()">Copy</button>
-        </div>
-        ${isAppleSilicon ? `<p class="settings-desc" style="margin-top:6px">The Metal build offloads model layers to the Apple GPU, making inference 4-10× faster and using unified memory efficiently.</p>` : ""}
-      </div>`;
+
+    // Check if running packaged (no Python path visible to user)
+    const isPackaged = (await window.rovot?.isPackaged?.()) ?? false;
+
+    if (isPackaged) {
+      // Packaged build — different message, no pip command
+      banner.innerHTML = `
+        <div class="llama-cpp-banner-icon">⚠</div>
+        <div class="llama-cpp-banner-body">
+          <strong>Built-in model engine unavailable</strong>
+          <p>The inference engine could not be loaded. Please reinstall Rovot or use an external model provider (LM Studio, Ollama) instead.</p>
+        </div>`;
+    } else {
+      // Dev build — show install command
+      banner.innerHTML = `
+        <div class="llama-cpp-banner-icon">⚠</div>
+        <div class="llama-cpp-banner-body">
+          <strong>llama-cpp-python not installed</strong>
+          <p>Built-in inference requires llama-cpp-python.
+          ${isAppleSilicon ? "You're on Apple Silicon — use the Metal build:" : "Install with pip:"}</p>
+          <div class="llama-cpp-cmd-wrap">
+            <code id="llama-install-cmd">${escapeHtml(cmd)}</code>
+            <button class="btn secondary btn-sm" onclick="copyInstallCmd()">Copy</button>
+          </div>
+          ${isAppleSilicon ? `<p class="settings-desc" style="margin-top:6px">The Metal build offloads model layers to the Apple GPU.</p>` : ""}
+        </div>`;
+    }
+
     section.insertBefore(banner, section.firstChild);
 
     // Disable all Load buttons while llama-cpp-python is missing
@@ -2654,10 +2671,73 @@ function setupHelpPanel() {
   });
 }
 
+// ── Mode switch modal ──
+
+function setupModeSwitchModal() {
+  const badge = document.getElementById("mode-badge");
+  const modal = document.getElementById("mode-modal");
+  if (!badge || !modal) return;
+
+  badge.addEventListener("click", () => {
+    // Pre-select current mode
+    const currentMode = cachedConfig?.user_mode || "standard";
+    document.querySelectorAll('input[name="modal-mode"]').forEach((r) => {
+      r.checked = r.value === currentMode;
+    });
+    document.querySelectorAll("#mode-modal .option-card").forEach((c) => {
+      const radio = c.querySelector('input[type="radio"]');
+      c.classList.toggle("selected", radio?.checked === true);
+    });
+    modal.classList.remove("hidden");
+  });
+
+  // Radio card selection
+  document.querySelectorAll('input[name="modal-mode"]').forEach((radio) => {
+    radio.addEventListener("change", () => {
+      document.querySelectorAll("#mode-modal .option-card").forEach((c) => c.classList.remove("selected"));
+      radio.closest(".option-card")?.classList.add("selected");
+    });
+  });
+
+  document.getElementById("mode-modal-cancel").addEventListener("click", () => {
+    modal.classList.add("hidden");
+  });
+
+  document.getElementById("mode-modal-apply").addEventListener("click", async () => {
+    const selected = document.querySelector('input[name="modal-mode"]:checked')?.value;
+    if (!selected) { modal.classList.add("hidden"); return; }
+    await api("/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: "user_mode", value: selected }),
+    });
+    modal.classList.add("hidden");
+    await refreshConfig();
+    // If currently on settings, refresh the active tab
+    const activeNav = document.querySelector(".nav-item.active")?.getAttribute("data-view");
+    if (activeNav === "settings") {
+      activateSettingsTab(lastSettingsTab);
+    }
+    showToast(
+      selected === "developer"
+        ? "Developer mode enabled — advanced settings are now visible."
+        : "Standard mode enabled.",
+      "success",
+      3000
+    );
+  });
+
+  // Close on backdrop click
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) modal.classList.add("hidden");
+  });
+}
+
 // ── Init ──
 
 setupOnboarding();
 setupHelpPanel();
+setupModeSwitchModal();
 
 // Fetch the auth token from the main process exactly once, then start the app.
 window.rovot.getToken().then((tok) => {

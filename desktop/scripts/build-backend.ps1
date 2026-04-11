@@ -5,6 +5,10 @@ if (Test-Path $out) { Remove-Item -Recurse -Force $out }
 New-Item -ItemType Directory -Force -Path $out | Out-Null
 
 Set-Location $root
+
+Write-Host "Installing llama-cpp-python..."
+python -m pip install llama-cpp-python --no-cache-dir
+
 python -m PyInstaller --clean -F -n rovot-daemon -c -p (Join-Path $root "src") (Join-Path $root "src\rovot\cli.py")
 
 Copy-Item (Join-Path $root "dist\rovot-daemon.exe") (Join-Path $out "rovot-daemon.exe") -Force

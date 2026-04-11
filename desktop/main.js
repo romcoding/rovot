@@ -234,6 +234,7 @@ function initAutoUpdater() {
 
 ipcMain.handle("get-daemon-error", () => daemonError);
 ipcMain.handle("get-token", () => cachedToken ?? "");
+ipcMain.handle("is-packaged", () => app.isPackaged);
 
 app.whenReady().then(async () => {
   loadCachedToken();

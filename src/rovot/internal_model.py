@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os as _os
+import sys as _sys
 from pathlib import Path
 from typing import AsyncIterator, Optional
 
@@ -72,8 +74,14 @@ class InternalModelProvider:
         except ImportError as exc:
             raise ImportError(
                 "Built-in inference requires llama-cpp-python. "
-                "Install with: CMAKE_ARGS='-DGGML_METAL=on' pip install llama-cpp-python"
+                "This should be bundled in the app — please reinstall Rovot."
             ) from exc
+
+        # When running from a PyInstaller bundle, Metal shader files are in _MEIPASS.
+        # Tell llama_cpp where to find them.
+        meipass = getattr(_sys, "_MEIPASS", None)
+        if meipass and _os.path.exists(_os.path.join(meipass, "ggml-metal.metal")):
+            _os.environ.setdefault("GGML_METAL_PATH_RESOURCES", meipass)
 
         MODELS_DIR.mkdir(parents=True, exist_ok=True)
         model_path = MODELS_DIR / model_filename
